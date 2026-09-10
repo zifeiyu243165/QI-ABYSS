@@ -1,0 +1,51 @@
+/* ==========================================================================
+   《炁渊 · QI ABYSS》设计令牌
+   本文件是全项目唯一允许出现 hex 字面量的文件。
+   其他任何文件引用颜色必须走 var(--color-*)。
+   严禁荧光紫 / 荧光粉 / 赛博霓虹蓝。
+   ========================================================================== */
+
+:root {
+  /* ---- 中国传统五正色 ---- */
+  --color-zhuhong: #c23b22;   /* 朱红 · 火 / 武力 / 阳炁 */
+  --color-shiqing: #0b2e59;   /* 石青 · 水 / 术法 / 阴炁 */
+  --color-songhua: #7bb661;   /* 松花绿 · 木 / 防御 */
+  --color-minghuang: #f5c518; /* 明黄 · 土 / 厚德 */
+  --color-yuebai: #d6ecff;    /* 月白 · 阴炁本源 */
+  --color-hupo: #ca6924;      /* 琥珀黄 · 阳炁本源 */
+
+  /* ---- 背景 / 水墨 ---- */
+  --color-gaosu: #e8e4d8;     /* 缟素 · 宣纸底 */
+  --color-yaqing: #1a1f2b;    /* 鸦青 · 墨底 */
+
+  /* ---- 五行本色（术法伤害数字 / 特效） ---- */
+  --color-wx-jin: #d9b45b;    /* 金 */
+  --color-wx-mu: #7bb661;     /* 木 */
+  --color-wx-shui: #4a90c2;   /* 水 */
+  --color-wx-huo: #c23b22;    /* 火 */
+  --color-wx-tu: #c8a165;     /* 土 */
+
+  /* ---- 语义别名 ---- */
+  --color-yang: var(--color-hupo);   /* 阳炁槽 · 朱红/琥珀 */
+  --color-yin: var(--color-yuebai);  /* 阴炁槽 · 月白 */
+  --color-hp: #b8443a;
+  --color-shield: var(--color-songhua);
+  --color-crit: var(--color-minghuang);
+  --color-truedmg: var(--color-gaosu);
+  --color-parry: var(--color-minghuang);
+  --color-flaw: var(--color-minghuang);
+  --color-danger: var(--color-zhuhong);
+
+  /* ---- 版面 ---- */
+  --screen-w: 390px;
+  --screen-h: 844px;
+
+  /* ---- 特效时长 ---- */
+  --fx-hitstop-min: 100ms;
+  --fx-hitstop-max: 300ms;
+
+  /* ---- 字体 ---- */
+  --font-brush: "STKaiti", "KaiTi", "Kaiti SC", "楷体", serif;
+  --font-body: "PingFang SC", "Microsoft YaHei", "Hiragino Sans GB", sans-serif;
+  --font-seal: "STZhongsong", "SimSun", "宋体", serif;
+}

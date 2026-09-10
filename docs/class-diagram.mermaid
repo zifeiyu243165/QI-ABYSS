@@ -1,0 +1,214 @@
+classDiagram
+    direction TB
+
+    class BattleState {
+        +number rngState
+        +number turn
+        +BattlePhase phase
+        +PlayerCombatant player
+        +EnemyCombatant[] enemies
+        +CardInstance[] deck
+        +CardInstance[] hand
+        +CardInstance[] discard
+        +LunarMonthId lunarMonthId
+        +SolarTermId solarTermId
+        +EquipLoadout equipment
+        +LogEntry[] log
+        +FxEvent[] fx
+        +Telegraph pendingTelegraph
+        +BattleStats stats
+        +Outcome outcome
+    }
+
+    class Combatant {
+        +string uid
+        +string name
+        +WuXing element
+        +number hp
+        +number maxHp
+        +number shield
+        +number atk
+        +number def
+        +number yang
+        +number yangMax
+        +number yin
+        +number yinMax
+        +StatusInstance[] statuses
+        +boolean vulnerable
+        +boolean alive
+    }
+
+    class PlayerCombatant {
+        +CharacterId characterId
+        +StanceId stanceId
+        +number shi
+        +boolean supremeUnlocked
+        +WuXing[] shengChain
+        +boolean parryUsed
+        +boolean tuneUsed
+        +number cardsPlayedThisTurn
+        +number attackCardsPlayedThisTurn
+        +number yangSpentThisTurn
+        +number yinSpentThisTurn
+        +boolean zhoutianTriggered
+        +Record~ShiShenId,number~ shishenTriggerCount
+    }
+
+    class EnemyCombatant {
+        +EnemyId enemyId
+        +boolean isBoss
+        +number slot
+        +EnemyAiState aiState
+        +EnemyIntent intent
+    }
+
+    class CardDef {
+        +CardId id
+        +string name
+        +CardKind kind
+        +WuXing element
+        +CostDef cost
+        +number powerMul
+        +number hits
+        +boolean aoe
+        +MergeTag mergeTag
+        +SolarTermId solarTermId
+        +Effect[] effects
+        +string descTpl
+    }
+
+    class CardInstance {
+        +string uid
+        +CardId defId
+        +boolean isUltimate
+        +CardId[] fusedFrom
+    }
+
+    class SolarTerm {
+        +SolarTermId id
+        +string name
+        +Season season
+        +number order
+        +WuXing element
+        +string desc
+        +string shortDesc
+        +ParticleKind particleKind
+        +boolean implemented
+        +CardId[] exclusiveCardIds
+        +SolarTermHooks hooks
+    }
+
+    class SolarTermHooks {
+        +onBattleStart(ctx) Effect[]
+        +onTurnStart(ctx) Effect[]
+        +onTurnEnd(ctx) Effect[]
+        +onCardPlayed(ctx) Effect[]
+        +onDamageDealt(ctx) Effect[]
+        +onDamageTaken(ctx) Effect[]
+        +onCombatantKilled(ctx) Effect[]
+        +onDrawCard(ctx) Effect[]
+        +modifyCardCost(draft, ctx) CostDraft
+        +modifyDamage(mods, ctx) DamageModifierDraft[]
+        +modifyParry(draft, ctx) ParryDraft
+        +modifyQiGain(draft, ctx) QiGainDraft
+    }
+
+    class DamageResolver {
+        +resolveDamage(state, input) DamageBreakdown
+        -collectModifiers(state, input) DamageModifier[]
+        -applyStageBase() number
+        -applyStageCrit() number
+        -applyStageMitigation() number
+    }
+
+    class ModifierProvider {
+        <<interface>>
+        +ModifierProviderId id
+        +provide(input, state) DamageModifier[]
+    }
+
+    class DamageModifier {
+        +string sourceId
+        +string label
+        +ModifierOp op
+        +number value
+        +condition(input, state) boolean
+    }
+
+    class DamageBreakdown {
+        +number baseAtk
+        +number cardMul
+        +number base
+        +number addBase
+        +number addFlat
+        +ModifierTrace[] multipliers
+        +number raw
+        +number critRate
+        +number critMul
+        +boolean isCrit
+        +number critDamage
+        +boolean trueDamage
+        +number defense
+        +number afterDef
+        +number final
+        +boolean scrape
+        +string[] tags
+    }
+
+    class EffectQueue {
+        +enqueue(effects) void
+        +drain(state) BattleState
+        -number depth
+        -MAX_CASCADE_DEPTH
+    }
+
+    class BattleEngine {
+        +createBattle(config) BattleState
+        +dispatch(state, action) BattleState
+        +startPlayerTurn(state) BattleState
+        +endPlayerTurn(state) BattleState
+        +runEnemyTurn(state) BattleState
+        +submitParry(state, elapsedMs) BattleState
+    }
+
+    class SolarTermRuntime {
+        +fireHook(state, hook, buildCtx) Effect[]
+        -TERM_REGISTRY Map
+    }
+
+    class ParryJudge {
+        <<utility>>
+        +judgeParry(elapsedMs, cfg) ParryResult
+    }
+
+    class BattleStore {
+        -BattleState state
+        +getState() BattleState
+        +dispatch(action) void
+        +subscribe(fn) Unsubscribe
+    }
+
+    Combatant <|-- PlayerCombatant
+    Combatant <|-- EnemyCombatant
+    BattleState *-- PlayerCombatant
+    BattleState *-- EnemyCombatant
+    BattleState *-- CardInstance
+    BattleState *-- SolarTerm : solarTermId
+    CardInstance --> CardDef : defId
+    SolarTerm *-- SolarTermHooks
+    SolarTerm --> CardDef : exclusiveCardIds
+    DamageResolver ..> ModifierProvider : 按 PROVIDER_ORDER 收集
+    DamageResolver ..> DamageModifier
+    DamageResolver ..> DamageBreakdown : 产出
+    ModifierProvider <|.. LunarMonthProvider
+    ModifierProvider <|.. SolarTermProvider
+    ModifierProvider <|.. ShiShenProvider
+    ModifierProvider <|.. StanceProvider
+    ModifierProvider <|.. EquipmentProvider
+    ModifierProvider <|.. VulnerabilityProvider
+    BattleEngine --> DamageResolver
+    BattleEngine --> EffectQueue
+    BattleEngine --> SolarTermRuntime
+    BattleEngine --> ParryJudge
+    SolarTermRuntime --> SolarTermHooks : 查表调用
+    BattleStore --> BattleEngine : reducer

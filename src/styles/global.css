@@ -1,0 +1,195 @@
+@import "./tokens.css";
+
+/* ===================== 基础重置 ===================== */
+* {
+  box-sizing: border-box;
+  -webkit-tap-highlight-color: transparent;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  padding: 0;
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-body);
+  background: #0e1117; /* 画布外的剧场黑，非游戏用色 */
+  color: var(--color-gaosu);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  user-select: none;
+}
+
+button {
+  font-family: inherit;
+  color: inherit;
+  border: none;
+  background: none;
+  cursor: pointer;
+  padding: 0;
+}
+
+/* ===================== 屏幕框 ===================== */
+.screen-frame {
+  position: relative;
+  width: var(--screen-w);
+  height: var(--screen-h);
+  max-width: 100vw;
+  max-height: 100vh;
+  overflow: hidden;
+  background: var(--color-yaqing);
+  display: flex;
+  flex-direction: column;
+}
+
+/* 宣纸纹理：鸦青底 + 缟素微光 */
+.screen-frame::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background:
+    radial-gradient(120% 80% at 50% 0%, rgba(232, 228, 216, 0.08), transparent 60%),
+    radial-gradient(90% 60% at 50% 100%, rgba(11, 46, 89, 0.5), transparent 70%);
+}
+
+/* 竖屏在手机上的自适应：宽不足时等比缩放由 JS 处理，这里保证不溢出 */
+@media (max-width: 420px) {
+  .screen-frame {
+    width: 100vw;
+    height: 100vh;
+  }
+}
+
+/* ===================== 通用动画 ===================== */
+
+/* 卡帧：由 JS 加 class 触发，时长随伤害倍率内联设置 */
+.hitstop-flash {
+  animation: hitstopFlash var(--hitstop-duration, 150ms) steps(1) 1;
+}
+
+@keyframes hitstopFlash {
+  0%,
+  100% {
+    filter: none;
+  }
+  50% {
+    filter: brightness(1.6) saturate(1.3);
+  }
+}
+
+/* 受击震屏 */
+@keyframes shake {
+  0% { transform: translate(0, 0); }
+  20% { transform: translate(-6px, 3px); }
+  40% { transform: translate(5px, -4px); }
+  60% { transform: translate(-4px, -2px); }
+  80% { transform: translate(3px, 4px); }
+  100% { transform: translate(0, 0); }
+}
+.shake { animation: shake 260ms ease-out; }
+
+/* 数字爆裂：从受击点弹出后回落 */
+@keyframes numberPop {
+  0% { transform: translate(-50%, 0) scale(0.3); opacity: 0; }
+  25% { transform: translate(-50%, -26px) scale(1.6); opacity: 1; }
+  55% { transform: translate(-50%, -34px) scale(1); opacity: 1; }
+  100% { transform: translate(-50%, -70px) scale(0.85); opacity: 0; }
+}
+
+/* 金色「反弹」水墨字 */
+@keyframes parryGlyph {
+  0% { transform: scale(0.4) rotate(-12deg); opacity: 0; }
+  30% { transform: scale(1.25) rotate(3deg); opacity: 1; }
+  70% { transform: scale(1) rotate(0deg); opacity: 1; }
+  100% { transform: scale(1.08) rotate(0deg); opacity: 0; }
+}
+
+/* 毛笔字浮现 */
+@keyframes brushReveal {
+  0% { clip-path: inset(0 100% 0 0); opacity: 0; }
+  100% { clip-path: inset(0 0 0 0); opacity: 1; }
+}
+
+/* 印章落下 */
+@keyframes sealDrop {
+  0% { transform: scale(2.4) rotate(-18deg); opacity: 0; }
+  55% { transform: scale(0.94) rotate(3deg); opacity: 1; }
+  75% { transform: scale(1.06) rotate(-1deg); }
+  100% { transform: scale(1) rotate(-4deg); opacity: 1; }
+}
+
+/* 破绽金色光圈 */
+@keyframes flawPulse {
+  0%, 100% { box-shadow: 0 0 0 2px rgba(245, 197, 24, 0.85), 0 0 14px rgba(245, 197, 24, 0.45); }
+  50% { box-shadow: 0 0 0 4px rgba(245, 197, 24, 0.55), 0 0 26px rgba(245, 197, 24, 0.75); }
+}
+
+/* 蓄势/充能呼吸 */
+@keyframes breathe {
+  0%, 100% { opacity: 0.55; }
+  50% { opacity: 1; }
+}
+
+/* 判定条收缩 */
+@keyframes telegraphSweep {
+  from { transform: scaleX(1); }
+  to { transform: scaleX(0); }
+}
+
+/* ===================== 弹反微操 ===================== */
+
+/* 判定游标：由 CSS 动画驱动，避免逐帧 setState 卡顿 */
+.parry-cursor {
+  position: absolute;
+  left: 0;
+  top: 0;
+  bottom: 0;
+  width: 4px;
+  background: var(--color-gaosu);
+  box-shadow: 0 0 10px rgba(232, 228, 216, 0.95);
+  animation-name: parrySweep;
+  animation-timing-function: linear;
+  animation-fill-mode: forwards;
+}
+
+@keyframes parrySweep {
+  from { left: 0; }
+  to { left: calc(100% - 4px); }
+}
+
+/* 敌方蓄力脉动：前摇阶段的攻击预警 */
+.enemy-charging {
+  animation: enemyCharging 420ms ease-in-out infinite;
+}
+
+@keyframes enemyCharging {
+  0%, 100% { transform: scale(1); filter: drop-shadow(0 0 6px rgba(194, 59, 34, 0.5)); }
+  50% { transform: scale(1.07); filter: drop-shadow(0 0 22px rgba(194, 59, 34, 0.95)); }
+}
+
+/* 玩家受击红闪 */
+@keyframes hurtFlash {
+  0% { background: rgba(194, 59, 34, 0.4); }
+  100% { background: transparent; }
+}
+
+.hurt-flash {
+  animation: hurtFlash 320ms ease-out;
+  pointer-events: none;
+}
+
+/* 淡入上浮 */
+@keyframes fadeUp {
+  from { opacity: 0; transform: translateY(12px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+
+/* ===================== 滚动条 ===================== */
+::-webkit-scrollbar { width: 4px; height: 4px; }
+::-webkit-scrollbar-thumb { background: rgba(232, 228, 216, 0.25); border-radius: 2px; }

@@ -1,0 +1,88 @@
+sequenceDiagram
+    autonumber
+    participant UI as BattleScreen (React)
+    participant Store as battleStore
+    participant Eng as battleReducer
+    participant Term as SolarTermRuntime
+    participant Res as resolveDamage
+    participant Q as EffectQueue
+    participant P as ParryJudge
+    participant Fx as ParticleField / Audio
+
+    Note over UI: 主界面点击「出发讨伐」
+    UI->>Store: dispatch INIT_BATTLE(characterId, loadout)
+    Store->>Eng: createBattle(config)
+    Eng->>Eng: 抽节气 rollSolarTerm(seed) -> jingzhe
+    Eng->>Eng: buildDeck(characterId, jingzhe) 含节气限定卡
+    Eng->>Term: fireHook(onBattleStart)
+    Term-->>Eng: Effect[] 立春 +1手牌 +2势
+    Eng->>Q: drain(effects)
+    Q-->>Eng: newState
+    Eng-->>UI: state.phase = playerTurn
+
+    rect rgb(232,228,216)
+    Note over UI,Fx: 我方回合
+    UI->>Store: dispatch PLAY_CARD(uid, targetUid)
+    Store->>Eng: reducer
+    Eng->>Term: fireHook(modifyCardCost, draft)
+    Term-->>Eng: CostDraft 惊蛰首攻 消耗x2
+    Eng->>Eng: payCost 检查 2比1 替代
+    alt 炁不足且无法替代
+        Eng-->>UI: 拒绝 + log 炁不足
+    else 可支付
+        Eng->>Res: resolveDamage(state, input)
+        Res->>Term: fireHook(modifyDamage, mods)
+        Term-->>Res: term.jingzhe mul 1.5
+        Res->>Res: S1基数 S2卡倍 S3收修正 S4连乘
+        Res->>Res: S5暴击 rngState推进 S6减伤刮痧 S7护盾
+        Res-->>Eng: DamageBreakdown
+        Eng->>Term: fireHook(onDamageDealt, breakdown)
+        Term-->>Eng: Effect[] 白露附加霜寒
+        Eng->>Q: drain(damage + effects)
+        Q->>Q: 击杀则 onKill 七杀减费 depth小于8否则熔断
+        Q-->>Eng: newState + fx[]
+        Eng-->>UI: state 含 fx 事件
+        UI->>Fx: 消费 fx 墨染金箔 Hitstop 数字爆裂 音效
+    end
+    UI->>Store: dispatch END_TURN
+    Eng->>Term: fireHook(onTurnEnd) 芒种校验攻击牌数
+    Eng->>Eng: 结算破绽标记 敌方 vulnerable
+    Eng-->>UI: phase = enemyTelegraph
+    end
+
+    rect rgb(26,31,43)
+    Note over UI,P: 敌方回合 手牌区下沉 格挡大按钮接管
+    Eng->>Eng: enemyAi 生成 intent
+    Eng-->>UI: pendingTelegraph moveName telegraph300 window600
+    UI->>UI: useRaf 启动倒计时 渲染收缩判定条
+    alt 玩家按下格挡
+        UI->>Store: dispatch SUBMIT_PARRY(elapsedMs)
+        Store->>Eng: reducer
+        Eng->>P: judgeParry(elapsedMs, cfg)
+        P-->>Eng: parry 或 block 或 none
+        Eng->>Term: fireHook(modifyParry, draft)
+        Term-->>Eng: 大雪 强制 parry autoLocked
+        alt result = parry
+            Eng->>Eng: 免疫本次伤害 + 追击 atk x0.5 无消耗
+            Eng->>Q: drain(阴炁+2 mirrorShatter sfx)
+            Eng-->>UI: 金色反弹水墨字 + 镜面碎裂音
+        else result = block
+            Eng->>Eng: 减伤50% + 阴炁+1
+        else result = none
+            Eng->>Eng: 全额承伤 触发阴炁获取 卖血换蓝
+        end
+    else 玩家未按键 超时
+        Eng->>Eng: result = none 全额承伤 + 阴炁+2
+    end
+    Eng->>Eng: RESOLVE_ENEMY_ACTION TICK_STATUSES
+    Eng-->>UI: phase = playerTurn turn++
+    Eng->>Term: fireHook(onTurnStart) 得令回炁 冬至补低脉
+    end
+
+    Note over Eng: 胜负判定
+    alt 敌方全灭
+        Eng-->>UI: phase = victory 填充 stats
+        UI->>UI: 命理复盘页 最高单次伤害 最长连携 弹反 十神触发
+    else 我方 HP 归零
+        Eng-->>UI: phase = defeat
+    end
