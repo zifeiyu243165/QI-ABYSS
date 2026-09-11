@@ -230,6 +230,22 @@ function counterModifier(card: { wuxing?: WuXing } | null, target: Combatant): D
   return [];
 }
 
+/** 目标防御态修正：破甲削防 / 霜寒减速（冻伤）—— 状态必须有实际效果，禁止「无响应」状态 */
+export function effectiveDefense(target: Combatant): number {
+  let def = Math.max(0, target.def);
+  const armorBreak = target.statuses.find((st) => st.id === 'armorBreak');
+  if (armorBreak) def *= Math.max(0, 1 - armorBreak.stacks * 0.15);
+  return def;
+}
+
+/** 攻击方虚弱修正：虚弱使本次伤害下降（每层 -15%，上限 -45%） */
+function attackerModifiers(attacker: Combatant): DamageModifier[] {
+  const weak = attacker.statuses.find((st) => st.id === 'weak');
+  if (!weak) return [];
+  const penalty = Math.min(0.45, weak.stacks * 0.15);
+  return [{ op: 'mul', value: 1 - penalty, sourceId: 'status.weak', label: '虚弱' }];
+}
+
 export function collectModifiers(ctx: DamageContext, target: Combatant): DamageModifier[] {
   const { state, card } = ctx;
 
@@ -239,6 +255,7 @@ export function collectModifiers(ctx: DamageContext, target: Combatant): DamageM
     ...stanceModifiers(state, card),
     ...shishenModifiers(state),
     ...counterModifier(card, target),
+    ...attackerModifiers(state.player),
     ...fireModifyDamage(ctx), // 节气层
   ];
 
@@ -337,7 +354,7 @@ export function resolveDamage(
 
   // ---- 阶段 6：减伤 + 刮痧下限 ----
   const raw = base * totalMul * critMul;
-  const defense = Math.max(0, target.def);
+  const defense = effectiveDefense(target); // 破甲削减后的实际防御
   let afterDefense = opts.isTrue
     ? raw
     : raw * (1 - defense / (defense + DEFENSE_SOFTENING));

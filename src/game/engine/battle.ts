@@ -136,7 +136,13 @@ export function createBattleState(input: CreateBattleInput): BattleState {
   const enemies: Enemy[] = campaign.enemyIds
     .map((id) => ENEMY_MAP[id])
     .filter(Boolean)
-    .map((e) => structuredClone(e));
+    .map((e) => {
+      const clone = structuredClone(e);
+      // 敌方「势」资源初始化（数据里可能未显式声明）
+      clone.shi = clone.shi ?? 0;
+      clone.shiCap = clone.shiCap ?? 4;
+      return clone;
+    });
 
   const { yang: yangCap, yin: yinCap } = getQiCap({
     equipment: input.equipment,
@@ -374,12 +380,22 @@ function startPlayerTurn(s: BattleState): BattleState {
     next.yin = Math.min(next.yinCap, next.yin + 1);
   }
 
-  // 灼烧结算
+  // 灼烧结算（玩家）
   const burn = next.player.statuses.find((st) => st.id === 'burn');
   if (burn) {
-    const dmg = burn.stacks * 3;
+    const dmg = burn.stacks * 4;
     next.player.hp = Math.max(1, next.player.hp - dmg);
     pushLog(next, `灼烧发作，损失 ${dmg} 点气血`);
+  }
+
+  // 灼烧结算（敌方）—— 状态必须双向生效，禁止「只对玩家有效」的单向机制
+  for (const e of next.enemies) {
+    const eb = e.statuses.find((st) => st.id === 'burn');
+    if (eb && e.hp > 0) {
+      const dmg = eb.stacks * 4;
+      e.hp = Math.max(0, e.hp - dmg);
+      pushLog(next, `${e.name} 灼烧发作，损失 ${dmg} 点气血`);
+    }
   }
 
   drawCards(next, DRAW_PER_TURN);
@@ -772,15 +788,49 @@ function enemyAct(s: BattleState): BattleState {
     if (!intent) continue;
     e.currentIntent = intent;
 
+    // 敌方「势」资源：不足则本回合只能「回气」，无法出招 —— 让敌人也有资源博弈
+    const cost = intent.cost ?? 0;
+    if (cost > 0 && e.shi < cost) {
+      e.shi = Math.min(e.shiCap, e.shi + 1);
+      pushLog(next, `${e.name} 炁势未聚，回气蓄势（势 ${e.shi}/${e.shiCap}）`);
+      continue;
+    }
+    if (cost > 0) e.shi -= cost;
+
     if (intent.type === 'guard') {
-      e.shield += GUARD_SHIELD;
-      pushLog(next, `${e.name} 进入防御姿态，获得 ${GUARD_SHIELD} 点护盾`);
+      const gain = intent.selfShield ?? GUARD_SHIELD;
+      e.shield += gain;
+      pushLog(next, `${e.name} 进入防御姿态，获得 ${gain} 点护盾`);
+      continue;
+    }
+
+    if (intent.type === 'buff') {
+      if (intent.selfCharge) {
+        e.chargeStacks += intent.selfCharge;
+        pushLog(next, `${e.name} 「${intent.label}」，蓄势 +${intent.selfCharge}（现 ${e.chargeStacks} 层）`);
+      }
+      if (intent.selfShield) {
+        e.shield += intent.selfShield;
+        pushLog(next, `${e.name} 「${intent.label}」，获得 ${intent.selfShield} 点护盾`);
+      }
+      e.shi = Math.min(e.shiCap, e.shi + 1);
       continue;
     }
 
     if (intent.type === 'charge') {
       e.chargeStacks += 1;
       pushLog(next, `${e.name} 蓄势，下一击伤害 ×${1 + e.chargeStacks}`);
+      continue;
+    }
+
+    if (intent.type === 'debuff') {
+      if (intent.inflict) {
+        const ex = next.player.statuses.find((st) => st.id === intent.inflict!.id);
+        if (ex) ex.stacks += intent.inflict.stacks;
+        else next.player.statuses.push({ ...intent.inflict });
+        pushLog(next, `${e.name} 「${intent.label}」，你被施加了状态`);
+      }
+      e.shi = Math.min(e.shiCap, e.shi + 1);
       continue;
     }
 
@@ -802,6 +852,11 @@ function enemyAct(s: BattleState): BattleState {
     if (dmg > 0) {
       applyDamageToPlayer(next, dmg);
       pushLog(next, `${e.name} 使用「${intent.label}」，造成 ${dmg} 点伤害`);
+      if (intent.inflict) {
+        const ex = next.player.statuses.find((st) => st.id === intent.inflict!.id);
+        if (ex) ex.stacks += intent.inflict.stacks;
+        else next.player.statuses.push({ ...intent.inflict });
+      }
     } else {
       pushLog(next, `${e.name} 的「${intent.label}」被完全弹反`);
     }

@@ -2,7 +2,16 @@
    《炁渊 · QI ABYSS》设计令牌
    本文件是全项目唯一允许出现 hex 字面量的文件。
    其他任何文件引用颜色必须走 var(--color-*)。
-   严禁荧光紫 / 荧光粉 / 赛博霓虹蓝。
+
+   【v2 · 汉唐明媚】
+   用户反馈：旧版偏灰暗，深蓝卡牌底框 + 低饱和水墨背景，整体有「阴曹地府」感。
+   修正方向：色温整体拉高，注入「宣纸暖白 / 描金 / 石青石绿 / 朱砂琥珀」，
+   做成「大唐盛世的神仙打架」，而非「阴间斗法」。
+
+   铁律：
+   - 严格五正色（朱红/石青/松花绿/明黄/月白/琥珀黄 + 缟素/鸦青）
+   - 严禁荧光紫 / 荧光粉 / 赛博霓虹蓝
+   - 严禁纯黑 #000000 作背景
    ========================================================================== */
 
 :root {
@@ -18,6 +27,36 @@
   --color-gaosu: #e8e4d8;     /* 缟素 · 宣纸底 */
   --color-yaqing: #1a1f2b;    /* 鸦青 · 墨底 */
 
+  /* ==========================================================================
+     新增：汉唐明媚色阶
+     ========================================================================== */
+
+  /* ---- 宣纸 / 竹简（卡牌与面板底色，替代原深蓝底） ---- */
+  --color-xuanzhi: #f7f2e4;      /* 宣纸米白 · 卡面主底 */
+  --color-xuanzhi-warm: #fbf7ec; /* 宣纸高光 */
+  --color-zhujian: #ecd9ab;      /* 竹简暖黄 · 卡面次底 */
+  --color-zhujian-deep: #e0c68d; /* 竹简深调 · 卡牌底衬 */
+  --color-chenpi: #c9a961;       /* 陈皮金 · 描边 */
+
+  /* ---- 描金 / 烫金（边框、分隔、印章） ---- */
+  --color-miaojin: #d4a843;      /* 描金主线 */
+  --color-miaojin-light: #eccb7a;/* 描金高光 */
+  --color-miaojin-deep: #a67c2e; /* 描金暗部 */
+
+  /* ---- 青绿山水（背景主色，替代灰绿枯山水） ---- */
+  --color-qinglv: #7fa88c;       /* 青绿 · 石绿 */
+  --color-shilv: #5a8a6a;        /* 石绿深 */
+  --color-shishui: #6a9ec4;      /* 石青 · 山峦远色 */
+  --color-tianqing: #9fc4dd;     /* 天青 · 远山云雾 */
+  --color-yunwu: #dfeaf2;        /* 云雾白 · 留白 */
+  --color-xiaguang: #f3d9a4;     /* 霞光金 · 云霞 */
+
+  /* ---- 玉石 / 金丝楠（面板材质） ---- */
+  --color-yushi: #e4efe8;        /* 玉白 */
+  --color-yushi-deep: #bcd6c8;   /* 玉青 */
+  --color-jinsinan: #8a5a34;     /* 金丝楠木 */
+  --color-jinsinan-light: #c08a52;
+
   /* ---- 五行本色（术法伤害数字 / 特效） ---- */
   --color-wx-jin: #d9b45b;    /* 金 */
   --color-wx-mu: #7bb661;     /* 木 */
@@ -26,15 +65,23 @@
   --color-wx-tu: #c8a165;     /* 土 */
 
   /* ---- 语义别名 ---- */
-  --color-yang: var(--color-hupo);   /* 阳炁槽 · 朱红/琥珀 */
-  --color-yin: var(--color-yuebai);  /* 阴炁槽 · 月白 */
-  --color-hp: #b8443a;
+  --color-yang: var(--color-hupo);   /* 阳炁槽 · 琥珀 */
+  --color-yin: var(--color-shishui);  /* 阴炁槽 · 石青（原月白太淡，改石青更醒目） */
+  --color-hp: #c0392b;                /* 主角血条 · 朱红 */
+  --color-hp-grad-a: #e05a3c;
+  --color-hp-grad-b: #a52a1a;
+  --color-enemy-hp: #d94a3d;          /* 敌方血条 · 亮红 */
   --color-shield: var(--color-songhua);
   --color-crit: var(--color-minghuang);
-  --color-truedmg: var(--color-gaosu);
+  --color-truedmg: #ffffff;
   --color-parry: var(--color-minghuang);
   --color-flaw: var(--color-minghuang);
   --color-danger: var(--color-zhuhong);
+
+  /* ---- 卡面文字（高对比，替代灰底灰字） ---- */
+  --color-card-text: #2a2118;        /* 鸦青偏褐 · 卡牌正文 */
+  --color-card-text-sub: #6b5b45;    /* 次级说明 */
+  --color-card-title: #8a2b16;       /* 卡牌标题 · 深朱 */
 
   /* ---- 版面 ---- */
   --screen-w: 390px;

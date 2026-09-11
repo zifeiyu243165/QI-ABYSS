@@ -1,47 +1,65 @@
 /**
  * 外围界面：主界面 / 编队 / 结算复盘 / 开场仪式
+ *
+ * v2 · 汉唐明媚：
+ * 全部面板改用「宣纸暖白 + 描金边 + 玉牌按钮」，
+ * 取代 v1 的深蓝底 + 灰白字（那种配色被用户形容为「阴曹地府 / 满清阴森」）。
+ *
+ * 设计哲学 §2.2：颜色只从 CSS 变量取；禁止纯黑背景；禁止荧光色。
  */
 
 import { useEffect, useMemo, useState } from 'react';
 import type { BattleState, SaveData } from '../game/types';
 import { CHARACTERS, CHARACTER_MAP } from '../game/data/actors';
 import { EQUIPMENT, findCombo } from '../game/data/cards';
-import { LUNAR_MONTH_MAP, SHI_SHEN_MAP, SOLAR_TERM_MAP, STANCES } from '../game/data/world';
+import {
+  IMPLEMENTED_TERMS,
+  LUNAR_MONTH_MAP,
+  LUNAR_MONTHS,
+  SHI_SHEN_MAP,
+  SOLAR_TERM_MAP,
+  STANCES,
+} from '../game/data/world';
 import { CharacterFigure } from './svg/Figure';
+import { GoldPanel, JadeButton } from './ui/Primitives';
 
-/* ============================== 通用按钮 ============================== */
+const BASE = import.meta.env.BASE_URL;
 
-function BigButton({
-  children,
-  onClick,
-  variant = 'primary',
-  disabled,
-}: {
-  children: React.ReactNode;
-  onClick?: () => void;
-  variant?: 'primary' | 'ghost';
-  disabled?: boolean;
-}) {
-  const bg = variant === 'primary' ? 'var(--color-zhuhong)' : 'rgba(232,228,216,0.1)';
+/* ============================== 背景层 ============================== */
+
+/**
+ * 宣纸 / 青绿山水背景。
+ * 从 v1 的 `opacity 0.32 深色水墨`（闷、灰、阴）改为明亮的青绿山水 + 霞光，
+ * 使「外围界面」与「战斗界面」色温一致。
+ */
+function AmbientBackground({ opacity = 0.34, position = 'center' }: { opacity?: number; position?: string }) {
   return (
-    <button
-      onClick={onClick}
-      disabled={disabled}
-      style={{
-        width: '100%',
-        padding: '13px 0',
-        borderRadius: 6,
-        fontFamily: 'var(--font-brush)',
-        fontSize: 17,
-        letterSpacing: 3,
-        background: disabled ? 'rgba(232,228,216,0.06)' : bg,
-        color: disabled ? 'rgba(232,228,216,0.3)' : 'var(--color-gaosu)',
-        border: `1px solid ${variant === 'primary' ? 'rgba(245,197,24,0.45)' : 'rgba(232,228,216,0.2)'}`,
-        opacity: disabled ? 0.6 : 1,
-      }}
-    >
-      {children}
-    </button>
+    <>
+      <div
+        className="cloud-drift"
+        style={{
+          position: 'absolute',
+          inset: '-4%',
+          backgroundImage: `url(${BASE}art/bg_主界面.png), url(${BASE}art/bg_战场.png)`,
+          backgroundSize: 'cover',
+          backgroundPosition: position,
+          opacity,
+          zIndex: 0,
+          pointerEvents: 'none',
+        }}
+      />
+      {/* 霞光罩层：把色温拉暖，避免「灰绿枯山水」的压抑 */}
+      <div
+        style={{
+          position: 'absolute',
+          inset: 0,
+          zIndex: 0,
+          pointerEvents: 'none',
+          background:
+            'linear-gradient(180deg, rgba(243,217,164,0.3) 0%, rgba(223,234,242,0.1) 44%, rgba(251,247,236,0.56) 100%)',
+        }}
+      />
+    </>
   );
 }
 
@@ -71,22 +89,10 @@ export function MainScreen({
         overflow: 'hidden',
       }}
     >
-      {/* 水墨背景 */}
-      <div
-        style={{
-          position: 'absolute',
-          inset: 0,
-          backgroundImage: `url(${import.meta.env.BASE_URL}art/bg_battle.png)`,
-          backgroundSize: 'cover',
-          backgroundPosition: 'center',
-          opacity: 0.5,
-          zIndex: -1,
-          pointerEvents: 'none',
-        }}
-      />
+      <AmbientBackground opacity={0.42} />
 
       {/* 主角立绘 */}
-      <div style={{ animation: 'fadeUp 900ms ease-out' }}>
+      <div style={{ animation: 'fadeUp 900ms ease-out', position: 'relative', zIndex: 1 }}>
         <CharacterFigure
           characterId={char.id}
           robe={char.palette.robe}
@@ -96,14 +102,16 @@ export function MainScreen({
         />
       </div>
 
-      <div style={{ textAlign: 'center' }}>
+      <div style={{ textAlign: 'center', position: 'relative', zIndex: 1 }}>
         <div
           style={{
             fontFamily: 'var(--font-brush)',
             fontSize: 62,
             letterSpacing: 12,
-            color: 'var(--color-gaosu)',
-            textShadow: '0 4px 18px rgba(194,59,34,0.55)',
+            color: 'var(--color-card-title)',
+            // 描金外发光 + 朱红投影，做成「匾额」而非「霓虹招牌」
+            textShadow:
+              '0 1px 0 rgba(255,246,220,0.9), 0 3px 10px rgba(212,168,67,0.6), 0 6px 20px rgba(194,59,34,0.3)',
             animation: 'fadeUp 700ms ease-out',
           }}
         >
@@ -113,8 +121,9 @@ export function MainScreen({
           style={{
             fontSize: 11,
             letterSpacing: 6,
-            color: 'var(--color-hupo)',
-            marginTop: 2,
+            color: 'var(--color-miaojin-deep)',
+            marginTop: 4,
+            fontWeight: 600,
           }}
         >
           Q I &nbsp; A B Y S S
@@ -122,7 +131,7 @@ export function MainScreen({
         <div
           style={{
             fontSize: 11,
-            color: 'rgba(232,228,216,0.5)',
+            color: 'var(--color-card-text-sub)',
             marginTop: 14,
             fontFamily: 'var(--font-brush)',
           }}
@@ -131,14 +140,35 @@ export function MainScreen({
         </div>
       </div>
 
-      <div style={{ width: '100%', display: 'flex', flexDirection: 'column', gap: 10, marginTop: 22 }}>
-        <BigButton onClick={onStart}>入 局</BigButton>
-        <BigButton onClick={onLoadout} variant="ghost">
+      <div
+        style={{
+          width: '100%',
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 10,
+          marginTop: 22,
+          position: 'relative',
+          zIndex: 1,
+        }}
+      >
+        <JadeButton onClick={onStart} variant="primary" size="lg">
+          入 局
+        </JadeButton>
+        <JadeButton onClick={onLoadout} variant="ghost" size="lg">
           编 队 · 命 盘
-        </BigButton>
+        </JadeButton>
       </div>
 
-      <div style={{ fontSize: 10, color: 'rgba(232,228,216,0.35)', textAlign: 'center', marginTop: 10 }}>
+      <div
+        style={{
+          fontSize: 10,
+          color: 'var(--color-card-text-sub)',
+          textAlign: 'center',
+          marginTop: 10,
+          position: 'relative',
+          zIndex: 1,
+        }}
+      >
         已通关 {save.clearedCampaigns.length} / 4 场
         <br />
         心猿潜伏在都市的霓虹阴影里
@@ -164,6 +194,16 @@ export function LoadoutScreen({
   const [slotA, slotB] = equip;
   const combo = findCombo(slotA, slotB) ?? findCombo(slotB, slotA);
 
+  /* 环境：展示本轮月令 + 已实现节气，让「五层变量」在编队阶段可见 */
+  const [monthId, setMonthId] = useState(LUNAR_MONTHS[6]!.id);
+  const [termId, setTermId] = useState(IMPLEMENTED_TERMS[0]!.id);
+  const month = LUNAR_MONTH_MAP[monthId];
+  const term = SOLAR_TERM_MAP[termId];
+
+  const deling = char && month && char.wuxing === month.wuxing;
+  const shiling =
+    char && month && { mu: 'tu', tu: 'shui', shui: 'huo', huo: 'jin', jin: 'mu' }[month.wuxing] === char.wuxing;
+
   const flowName = useMemo(() => {
     const kinds = [slotA, slotB].map((id) => EQUIPMENT.find((e) => e.id === id)?.kind);
     const blade = kinds.filter((k) => k === 'blade').length;
@@ -180,212 +220,395 @@ export function LoadoutScreen({
   };
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, position: 'relative', overflow: 'hidden' }}>
-      {/* 水墨背景 */}
+    <div
+      style={{
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        minHeight: 0,
+        position: 'relative',
+        overflow: 'hidden',
+      }}
+    >
+      <AmbientBackground opacity={0.3} position="center 30%" />
+
       <div
         style={{
-          position: 'absolute',
-          inset: 0,
-          backgroundImage: `url(${import.meta.env.BASE_URL}art/bg_battle.png)`,
-          backgroundSize: 'cover',
-          backgroundPosition: 'center 30%',
-          opacity: 0.32,
-          zIndex: 0,
-          pointerEvents: 'none',
+          flex: 1,
+          display: 'flex',
+          flexDirection: 'column',
+          minHeight: 0,
+          overflowY: 'auto',
+          position: 'relative',
+          zIndex: 1,
         }}
-      />
-      <div style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0, overflowY: 'auto', position: 'relative', zIndex: 1 }}>
-      {/* 头部 */}
-      <div style={{ padding: '10px 14px', display: 'flex', alignItems: 'center', gap: 10 }}>
-        <button onClick={onBack} style={{ color: 'var(--color-gaosu)', fontSize: 13 }}>
-          ← 返回
-        </button>
-        <span style={{ fontFamily: 'var(--font-brush)', fontSize: 16 }}>编队 · 命盘</span>
-      </div>
-
-      {/* 角色卡 */}
-      <div style={{ display: 'flex', gap: 12, padding: '0 14px 10px', alignItems: 'center' }}>
-        <CharacterFigure
-          characterId={char.id}
-          robe={char.palette.robe}
-          trim={char.palette.trim}
-          hair={char.palette.hair}
-          size={132}
-        />
-        <div style={{ flex: 1, fontSize: 11.5, lineHeight: 1.8 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{ fontFamily: 'var(--font-brush)', fontSize: 19, color: 'var(--color-gaosu)' }}>
-              {char.name}
-            </span>
-            {/* 日主印章 */}
-            <span
-              style={{
-                fontFamily: 'var(--font-seal)',
-                fontSize: 10,
-                background: 'var(--color-zhuhong)',
-                color: 'var(--color-gaosu)',
-                padding: '2px 5px',
-                borderRadius: 2,
-                transform: 'rotate(-4deg)',
-                animation: 'sealDrop 500ms ease-out',
-              }}
-            >
-              {char.rizhu}
-            </span>
-          </div>
-          <div style={{ color: 'rgba(232,228,216,0.62)' }}>
-            {char.faction} · {STANCES.find((s) => s.id === char.stance)?.name.split('·')[0]}
-          </div>
-          <div style={{ display: 'flex', gap: 4, marginTop: 3 }}>
-            {char.shishen.map((s) => (
-              <span
-                key={s}
-                style={{
-                  fontSize: 10,
-                  background: 'rgba(11,46,89,0.8)',
-                  color: 'var(--color-yuebai)',
-                  padding: '1px 6px',
-                  borderRadius: 2,
-                  border: '1px solid rgba(214,236,255,0.3)',
-                }}
-              >
-                {SHI_SHEN_MAP[s]?.name}
-              </span>
-            ))}
-          </div>
-          <div style={{ color: 'rgba(232,228,216,0.45)', fontSize: 10.5, marginTop: 4 }}>{char.lore}</div>
-          <div style={{ color: 'rgba(232,228,216,0.7)', fontSize: 10.5, marginTop: 3 }}>
-            气血 {char.hp} · 攻击 {char.atk} · 防御 {char.def}
-          </div>
+      >
+        {/* 头部 */}
+        <div
+          style={{
+            padding: '10px 14px',
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            background: 'linear-gradient(180deg, rgba(212,168,67,0.22), transparent)',
+          }}
+        >
+          <button
+            onClick={onBack}
+            style={{
+              color: 'var(--color-card-title)',
+              fontSize: 13,
+              fontFamily: 'var(--font-brush)',
+              padding: '3px 8px',
+              borderRadius: 4,
+              border: '1px solid var(--color-miaojin)',
+              background: 'rgba(251,247,236,0.8)',
+            }}
+          >
+            ← 返回
+          </button>
+          <span
+            style={{
+              fontFamily: 'var(--font-brush)',
+              fontSize: 17,
+              color: 'var(--color-card-title)',
+              letterSpacing: 2,
+            }}
+          >
+            编队 · 命盘
+          </span>
         </div>
-      </div>
 
-      {/* 角色选择 */}
-      <div style={{ display: 'flex', gap: 6, padding: '0 14px 10px' }}>
-        {CHARACTERS.map((c) => (
-          <button
-            key={c.id}
-            onClick={() => onChange({ selectedCharacterId: c.id })}
-            style={{
-              flex: 1,
-              padding: '7px 2px',
-              fontSize: 11,
-              borderRadius: 4,
-              border: `1px solid ${c.id === char.id ? 'var(--color-minghuang)' : 'rgba(232,228,216,0.18)'}`,
-              background: c.id === char.id ? 'rgba(245,197,24,0.14)' : 'rgba(26,31,43,0.6)',
-              color: c.id === char.id ? 'var(--color-minghuang)' : 'rgba(232,228,216,0.62)',
-            }}
-          >
-            {c.name}
-            <div style={{ fontSize: 9, opacity: 0.7 }}>{c.rizhu}</div>
-          </button>
-        ))}
-      </div>
-
-      {/* Tabs */}
-      <div style={{ display: 'flex', gap: 6, padding: '0 14px 8px' }}>
-        {(['角色', '装备'] as const).map((t) => (
-          <button
-            key={t}
-            onClick={() => setTab(t)}
-            style={{
-              padding: '5px 14px',
-              fontSize: 12,
-              borderRadius: 4,
-              border: `1px solid ${tab === t ? 'var(--color-hupo)' : 'rgba(232,228,216,0.16)'}`,
-              background: tab === t ? 'rgba(202,105,36,0.2)' : 'transparent',
-              color: tab === t ? 'var(--color-hupo)' : 'rgba(232,228,216,0.5)',
-            }}
-          >
-            {t}
-          </button>
-        ))}
-      </div>
-
-      {/* 内容 */}
-      <div style={{ flex: 1, overflowY: 'auto', padding: '0 14px 14px', minHeight: 0 }}>
-        {tab === '角色' && (
-          <div style={{ fontSize: 11, lineHeight: 1.9, color: 'rgba(232,228,216,0.72)' }}>
-            {char.shishen.map((s) => {
-              const ss = SHI_SHEN_MAP[s];
-              return (
-                <div key={s} style={{ marginBottom: 10 }}>
-                  <div style={{ color: 'var(--color-minghuang)', fontFamily: 'var(--font-brush)', fontSize: 14 }}>
-                    {ss?.name}
-                    <span style={{ fontSize: 10, color: 'rgba(232,228,216,0.45)', marginLeft: 6 }}>
-                      {ss?.category}
-                    </span>
-                  </div>
-                  <div>{ss?.desc}</div>
+        {/* 角色卡 */}
+        <div style={{ padding: '0 14px 10px' }}>
+          <GoldPanel style={{ padding: '10px 12px' }} glow>
+            <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
+              <CharacterFigure
+                characterId={char.id}
+                robe={char.palette.robe}
+                trim={char.palette.trim}
+                hair={char.palette.hair}
+                size={128}
+                flat
+              />
+              <div style={{ flex: 1, fontSize: 11.5, lineHeight: 1.8, minWidth: 0 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+                  <span
+                    style={{
+                      fontFamily: 'var(--font-brush)',
+                      fontSize: 20,
+                      color: 'var(--color-card-title)',
+                    }}
+                  >
+                    {char.name}
+                  </span>
+                  {/* 日主印章 */}
+                  <span
+                    style={{
+                      fontFamily: 'var(--font-seal)',
+                      fontSize: 10,
+                      background: 'var(--color-zhuhong)',
+                      color: 'var(--color-xuanzhi-warm)',
+                      padding: '2px 5px',
+                      borderRadius: 2,
+                      transform: 'rotate(-4deg)',
+                      animation: 'sealDrop 500ms ease-out',
+                      fontWeight: 700,
+                    }}
+                  >
+                    {char.rizhu}
+                  </span>
                 </div>
-              );
-            })}
-            <div style={{ marginTop: 14, paddingTop: 10, borderTop: '1px solid rgba(232,228,216,0.12)' }}>
-              <div style={{ color: 'var(--color-hupo)', fontFamily: 'var(--font-brush)', fontSize: 14 }}>
-                当前架势
-              </div>
-              <div>{STANCES.find((s) => s.id === char.stance)?.desc}</div>
-            </div>
-          </div>
-        )}
-
-        {tab === '装备' && (
-          <div>
-            {/* 流派提示 */}
-            <div
-              style={{
-                padding: '8px 10px',
-                borderRadius: 5,
-                background: 'rgba(245,197,24,0.12)',
-                border: '1px solid rgba(245,197,24,0.35)',
-                marginBottom: 10,
-                fontSize: 11.5,
-              }}
-            >
-              <span style={{ color: 'var(--color-minghuang)', fontFamily: 'var(--font-brush)', fontSize: 14 }}>
-                {flowName}
-              </span>
-              {combo && (
-                <span style={{ color: 'var(--color-gaosu)', marginLeft: 8 }}>
-                  · 附魔招式「{combo.skillName}」
-                </span>
-              )}
-            </div>
-
-            {(['blade', 'artifact'] as const).map((kind) => (
-              <div key={kind} style={{ marginBottom: 12 }}>
-                <div style={{ fontSize: 12, color: 'var(--color-hupo)', marginBottom: 6 }}>
-                  {kind === 'blade' ? '兵刃' : '法器'}
+                <div style={{ color: 'var(--color-card-text-sub)' }}>
+                  {char.faction} · {STANCES.find((s) => s.id === char.stance)?.name.split('·')[0]}
                 </div>
-                {EQUIPMENT.filter((e) => e.kind === kind).map((e) => {
-                  const slotIdx = kind === 'blade' ? 0 : 1;
-                  const active = equip[slotIdx] === e.id;
-                  return (
-                    <div
-                      key={e.id}
-                      onClick={() => setSlot(slotIdx as 0 | 1, active ? null : e.id)}
+                <div style={{ display: 'flex', gap: 4, marginTop: 3, flexWrap: 'wrap' }}>
+                  {char.shishen.map((s) => (
+                    <span
+                      key={s}
                       style={{
-                        padding: '8px 10px',
-                        borderRadius: 5,
-                        marginBottom: 6,
-                        cursor: 'pointer',
-                        border: `1px solid ${active ? 'var(--color-minghuang)' : 'rgba(232,228,216,0.14)'}`,
-                        background: active ? 'rgba(245,197,24,0.12)' : 'rgba(26,31,43,0.55)',
+                        fontSize: 10,
+                        background: 'linear-gradient(180deg, rgba(11,46,89,0.9), rgba(11,46,89,0.75))',
+                        color: 'var(--color-yuebai)',
+                        padding: '1px 6px',
+                        borderRadius: 2,
+                        border: '1px solid rgba(212,168,67,0.55)',
                       }}
                     >
-                      <div style={{ fontSize: 12.5, color: 'var(--color-gaosu)', fontFamily: 'var(--font-brush)' }}>
-                        {e.name}
-                        {active && <span style={{ fontSize: 10, marginLeft: 6, color: 'var(--color-minghuang)' }}>已装备</span>}
-                      </div>
-                      <div style={{ fontSize: 10.5, color: 'rgba(232,228,216,0.6)', marginTop: 2 }}>{e.desc}</div>
-                    </div>
-                  );
-                })}
+                      {SHI_SHEN_MAP[s]?.name}
+                    </span>
+                  ))}
+                </div>
+                <div style={{ color: 'var(--color-card-text-sub)', fontSize: 10.5, marginTop: 4 }}>
+                  {char.lore}
+                </div>
+                <div style={{ color: 'var(--color-card-text)', fontSize: 10.5, marginTop: 3, fontWeight: 600 }}>
+                  气血 {char.hp} · 攻击 {char.atk} · 防御 {char.def}
+                </div>
               </div>
-            ))}
-          </div>
-        )}
-      </div>
+            </div>
+          </GoldPanel>
+        </div>
+
+        {/* 角色选择 */}
+        <div style={{ display: 'flex', gap: 6, padding: '0 14px 10px' }}>
+          {CHARACTERS.map((c) => {
+            const active = c.id === char.id;
+            return (
+              <button
+                key={c.id}
+                onClick={() => onChange({ selectedCharacterId: c.id })}
+                style={{
+                  flex: 1,
+                  padding: '7px 2px',
+                  fontSize: 11,
+                  borderRadius: 5,
+                  fontFamily: 'var(--font-brush)',
+                  border: `1.5px solid ${active ? 'var(--color-miaojin)' : 'rgba(138,90,52,0.3)'}`,
+                  background: active
+                    ? 'linear-gradient(180deg, rgba(212,168,67,0.36), rgba(236,203,122,0.24))'
+                    : 'linear-gradient(180deg, rgba(251,247,236,0.86), rgba(236,217,171,0.7))',
+                  color: active ? 'var(--color-card-title)' : 'var(--color-card-text-sub)',
+                  fontWeight: active ? 700 : 400,
+                  boxShadow: active ? '0 0 10px rgba(212,168,67,0.45)' : 'none',
+                }}
+              >
+                {c.name}
+                <div style={{ fontSize: 9, opacity: 0.75 }}>{c.rizhu}</div>
+              </button>
+            );
+          })}
+        </div>
+
+        {/* Tabs */}
+        <div style={{ display: 'flex', gap: 6, padding: '0 14px 8px' }}>
+          {(['角色', '装备'] as const).map((t) => {
+            const active = tab === t;
+            return (
+              <button
+                key={t}
+                onClick={() => setTab(t)}
+                style={{
+                  padding: '5px 16px',
+                  fontSize: 12,
+                  borderRadius: 4,
+                  fontFamily: 'var(--font-brush)',
+                  border: `1.5px solid ${active ? 'var(--color-zhuhong)' : 'rgba(138,90,52,0.3)'}`,
+                  background: active
+                    ? 'linear-gradient(180deg, #d8543a, var(--color-zhuhong))'
+                    : 'rgba(251,247,236,0.7)',
+                  color: active ? 'var(--color-xuanzhi-warm)' : 'var(--color-card-text-sub)',
+                  fontWeight: active ? 700 : 400,
+                }}
+              >
+                {t}
+              </button>
+            );
+          })}
+        </div>
+
+        {/* 内容 */}
+        <div style={{ flex: 1, overflowY: 'auto', padding: '0 14px 14px', minHeight: 0 }}>
+          {tab === '角色' && (
+            <div>
+              {/* 天时：月令 × 节气 × 得令/失令 */}
+              <GoldPanel tone="jade" style={{ padding: '9px 11px', marginBottom: 10 }}>
+                <div
+                  style={{
+                    fontFamily: 'var(--font-brush)',
+                    fontSize: 14,
+                    color: 'var(--color-card-title)',
+                    marginBottom: 5,
+                  }}
+                >
+                  天时 · 得令推演
+                </div>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <label style={{ fontSize: 10.5, color: 'var(--color-card-text-sub)' }}>
+                    月令
+                    <select
+                      value={monthId}
+                      onChange={(e) => setMonthId(e.target.value)}
+                      style={{
+                        marginLeft: 4,
+                        fontSize: 10.5,
+                        borderRadius: 3,
+                        border: '1px solid var(--color-miaojin)',
+                        background: 'rgba(251,247,236,0.95)',
+                        color: 'var(--color-card-text)',
+                        padding: '1px 3px',
+                      }}
+                    >
+                      {LUNAR_MONTHS.map((m) => (
+                        <option key={m.id} value={m.id}>
+                          {m.label}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label style={{ fontSize: 10.5, color: 'var(--color-card-text-sub)' }}>
+                    炁候
+                    <select
+                      value={termId}
+                      onChange={(e) => setTermId(e.target.value)}
+                      style={{
+                        marginLeft: 4,
+                        fontSize: 10.5,
+                        borderRadius: 3,
+                        border: '1px solid var(--color-miaojin)',
+                        background: 'rgba(251,247,236,0.95)',
+                        color: 'var(--color-card-text)',
+                        padding: '1px 3px',
+                      }}
+                    >
+                      {IMPLEMENTED_TERMS.map((t) => (
+                        <option key={t.id} value={t.id}>
+                          {t.name}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                </div>
+                <div
+                  style={{
+                    marginTop: 6,
+                    fontSize: 11,
+                    fontWeight: 700,
+                    color: deling ? 'var(--color-zhuhong)' : shiling ? 'var(--color-miaojin-deep)' : 'var(--color-card-text-sub)',
+                  }}
+                >
+                  {deling
+                    ? '得令：全技能 +10%，每回合 +1 阳 +1 阴'
+                    : shiling
+                      ? '失令：首牌 +1 消耗，暴击 -10%'
+                      : '平令：无额外增益，也无惩罚'}
+                </div>
+                {term?.desc && (
+                  <div style={{ marginTop: 3, fontSize: 10.5, color: 'var(--color-card-text-sub)', lineHeight: 1.7 }}>
+                    {term.name}：{term.desc}
+                  </div>
+                )}
+              </GoldPanel>
+
+              {char.shishen.map((s) => {
+                const ss = SHI_SHEN_MAP[s];
+                return (
+                  <GoldPanel key={s} style={{ padding: '8px 11px', marginBottom: 8 }}>
+                    <div
+                      style={{
+                        color: 'var(--color-card-title)',
+                        fontFamily: 'var(--font-brush)',
+                        fontSize: 14,
+                      }}
+                    >
+                      {ss?.name}
+                      <span style={{ fontSize: 10, color: 'var(--color-card-text-sub)', marginLeft: 6 }}>
+                        {ss?.category}
+                      </span>
+                    </div>
+                    <div style={{ fontSize: 11, color: 'var(--color-card-text)', lineHeight: 1.8 }}>{ss?.desc}</div>
+                  </GoldPanel>
+                );
+              })}
+
+              <GoldPanel tone="jade" style={{ padding: '8px 11px' }}>
+                <div
+                  style={{
+                    color: 'var(--color-card-title)',
+                    fontFamily: 'var(--font-brush)',
+                    fontSize: 14,
+                  }}
+                >
+                  当前架势
+                </div>
+                <div style={{ fontSize: 11, color: 'var(--color-card-text)', lineHeight: 1.8 }}>
+                  {STANCES.find((s) => s.id === char.stance)?.desc}
+                </div>
+              </GoldPanel>
+            </div>
+          )}
+
+          {tab === '装备' && (
+            <div>
+              {/* 流派提示 */}
+              <GoldPanel glow style={{ padding: '9px 11px', marginBottom: 10 }}>
+                <span
+                  style={{
+                    color: 'var(--color-card-title)',
+                    fontFamily: 'var(--font-brush)',
+                    fontSize: 15,
+                  }}
+                >
+                  {flowName}
+                </span>
+                {combo && (
+                  <span style={{ color: 'var(--color-card-text)', marginLeft: 8, fontSize: 11.5 }}>
+                    · 附魔招式「{combo.skillName}」
+                  </span>
+                )}
+                {!combo && (
+                  <span style={{ color: 'var(--color-card-text-sub)', marginLeft: 8, fontSize: 11 }}>
+                    · 未触发附魔
+                  </span>
+                )}
+              </GoldPanel>
+
+              {(['blade', 'artifact'] as const).map((kind) => (
+                <div key={kind} style={{ marginBottom: 12 }}>
+                  <div
+                    style={{
+                      fontSize: 12,
+                      color: 'var(--color-card-title)',
+                      marginBottom: 6,
+                      fontFamily: 'var(--font-brush)',
+                      letterSpacing: 1,
+                    }}
+                  >
+                    {kind === 'blade' ? '兵刃' : '法器'}
+                  </div>
+                  {EQUIPMENT.filter((e) => e.kind === kind).map((e) => {
+                    const slotIdx = kind === 'blade' ? 0 : 1;
+                    const active = equip[slotIdx] === e.id;
+                    return (
+                      <div
+                        key={e.id}
+                        onClick={() => setSlot(slotIdx as 0 | 1, active ? null : e.id)}
+                        style={{
+                          padding: '8px 10px',
+                          borderRadius: 6,
+                          marginBottom: 6,
+                          cursor: 'pointer',
+                          border: `1.5px solid ${active ? 'var(--color-miaojin)' : 'rgba(138,90,52,0.28)'}`,
+                          background: active
+                            ? 'linear-gradient(158deg, rgba(253,246,230,0.98), rgba(236,203,122,0.9))'
+                            : 'linear-gradient(158deg, rgba(251,247,236,0.9), rgba(236,217,171,0.76))',
+                          boxShadow: active ? '0 0 12px rgba(212,168,67,0.5)' : '0 2px 5px rgba(120,90,40,0.14)',
+                        }}
+                      >
+                        <div
+                          style={{
+                            fontSize: 12.5,
+                            color: 'var(--color-card-title)',
+                            fontFamily: 'var(--font-brush)',
+                            fontWeight: 700,
+                          }}
+                        >
+                          {e.name}
+                          {active && (
+                            <span style={{ fontSize: 10, marginLeft: 6, color: 'var(--color-zhuhong)' }}>
+                              已装备
+                            </span>
+                          )}
+                        </div>
+                        <div style={{ fontSize: 10.5, color: 'var(--color-card-text)', marginTop: 2 }}>{e.desc}</div>
+                      </div>
+                    );
+                  })}
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       </div>
     </div>
   );
@@ -414,70 +637,113 @@ export function ResultScreen({
     char && month && { mu: 'tu', tu: 'shui', shui: 'huo', huo: 'jin', jin: 'mu' }[month.wuxing] === char.wuxing;
 
   return (
-    <div style={{ flex: 1, display: 'flex', flexDirection: 'column', padding: '18px 18px', minHeight: 0 }}>
-      <div style={{ textAlign: 'center', marginBottom: 12 }}>
+    <div
+      style={{
+        flex: 1,
+        display: 'flex',
+        flexDirection: 'column',
+        padding: '18px 18px',
+        minHeight: 0,
+        position: 'relative',
+        overflow: 'hidden',
+      }}
+    >
+      <AmbientBackground opacity={won ? 0.4 : 0.22} />
+
+      <div style={{ textAlign: 'center', marginBottom: 12, position: 'relative', zIndex: 1 }}>
         <div
           style={{
             fontFamily: 'var(--font-brush)',
-            fontSize: 44,
+            fontSize: 46,
             letterSpacing: 8,
-            color: won ? 'var(--color-minghuang)' : 'var(--color-zhuhong)',
-            textShadow: won ? '0 0 22px rgba(245,197,24,0.5)' : 'none',
+            color: won ? 'var(--color-miaojin-deep)' : 'var(--color-zhuhong)',
+            textShadow: won
+              ? '0 1px 0 rgba(255,246,220,0.9), 0 0 26px rgba(212,168,67,0.7)'
+              : '0 2px 10px rgba(194,59,34,0.35)',
           }}
         >
           {won ? '心猿已除' : '道消'}
         </div>
-        <div style={{ fontSize: 11, color: 'rgba(232,228,216,0.55)', marginTop: 4 }}>
+        <div style={{ fontSize: 11, color: 'var(--color-card-text-sub)', marginTop: 4, fontWeight: 600 }}>
           命理复盘 · {month?.label} · 炁候 {term?.name}
         </div>
       </div>
 
-      <div
+      <GoldPanel
         style={{
           flex: 1,
           overflowY: 'auto',
-          background: 'rgba(0,0,0,0.26)',
-          borderRadius: 6,
           padding: 12,
           fontSize: 11.5,
           lineHeight: 2,
           minHeight: 0,
+          position: 'relative',
+          zIndex: 1,
+          display: 'flex',
+          flexDirection: 'column',
         }}
       >
-        <Row k="得令 / 失令" v={deling ? '得令（全技能 +10%，每回合 +1 阳 +1 阴）' : shiling ? '失令（首牌 +1 消耗，暴击 -10%）' : '平'} />
+        <Row
+          k="得令 / 失令"
+          v={deling ? '得令（全技能 +10%，每回合 +1 阳 +1 阴）' : shiling ? '失令（首牌 +1 消耗，暴击 -10%）' : '平'}
+        />
         <Row k="回合数" v={`${state.stats.turnCount}`} />
         <Row k="出牌数" v={`${state.stats.cardsPlayed}`} />
         <Row k="最高连击" v={`${state.stats.maxCombo} 段`} />
         <Row k="相克命中" v={`${state.stats.maxCounterHits} 次`} />
         <Row k="最高单次伤害" v={`${state.stats.maxSingleDamage}`} />
-        <div style={{ color: 'rgba(232,228,216,0.45)', fontSize: 10.5, marginBottom: 2 }}>
+        <div style={{ color: 'var(--color-card-text-sub)', fontSize: 10.5, marginBottom: 2 }}>
           └ {state.stats.maxSingleDamageLabel || '—'}
         </div>
         <Row k="弹反 / 完美弹反" v={`${state.stats.parryCount} / ${state.stats.perfectParryCount}`} />
 
-        <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid rgba(232,228,216,0.14)' }}>
-          <div style={{ color: 'var(--color-minghuang)', fontFamily: 'var(--font-brush)', fontSize: 14, marginBottom: 4 }}>
+        <div style={{ marginTop: 10, paddingTop: 8, borderTop: '1px solid rgba(212,168,67,0.45)' }}>
+          <div
+            style={{
+              color: 'var(--color-card-title)',
+              fontFamily: 'var(--font-brush)',
+              fontSize: 14,
+              marginBottom: 4,
+            }}
+          >
             十神触发
           </div>
           {Object.entries(state.stats.shishenTriggers)
             .filter(([k]) => k !== 'piancai_thisTurn')
             .map(([k, v]) => (
-              <div key={k} style={{ color: 'rgba(232,228,216,0.72)' }}>
+              <div key={k} style={{ color: 'var(--color-card-text)' }}>
                 {SHI_SHEN_MAP[k]?.name ?? k} · {v} 次
               </div>
             ))}
           {Object.keys(state.stats.shishenTriggers).filter((k) => k !== 'piancai_thisTurn').length === 0 && (
-            <div style={{ color: 'rgba(232,228,216,0.4)' }}>本局未触发十神特效</div>
+            <div style={{ color: 'var(--color-card-text-sub)' }}>本局未触发十神特效</div>
           )}
         </div>
-      </div>
+      </GoldPanel>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 12 }}>
-        {won && onNext && <BigButton onClick={onNext}>下 一 战</BigButton>}
-        {!won && <BigButton onClick={onRetry}>再 来 一 次</BigButton>}
-        <BigButton onClick={onHome} variant="ghost">
+      <div
+        style={{
+          display: 'flex',
+          flexDirection: 'column',
+          gap: 8,
+          marginTop: 12,
+          position: 'relative',
+          zIndex: 1,
+        }}
+      >
+        {won && onNext && (
+          <JadeButton onClick={onNext} variant="primary" size="lg">
+            下 一 战
+          </JadeButton>
+        )}
+        {!won && (
+          <JadeButton onClick={onRetry} variant="primary" size="lg">
+            再 来 一 次
+          </JadeButton>
+        )}
+        <JadeButton onClick={onHome} variant="ghost" size="lg">
           回 主 界 面
-        </BigButton>
+        </JadeButton>
       </div>
     </div>
   );
@@ -486,8 +752,8 @@ export function ResultScreen({
 function Row({ k, v }: { k: string; v: string }) {
   return (
     <div style={{ display: 'flex', justifyContent: 'space-between', gap: 10 }}>
-      <span style={{ color: 'rgba(232,228,216,0.5)' }}>{k}</span>
-      <span style={{ color: 'var(--color-gaosu)', textAlign: 'right' }}>{v}</span>
+      <span style={{ color: 'var(--color-card-text-sub)' }}>{k}</span>
+      <span style={{ color: 'var(--color-card-text)', textAlign: 'right', fontWeight: 600 }}>{v}</span>
     </div>
   );
 }
@@ -526,12 +792,15 @@ export function IntroSequence({
         position: 'absolute',
         inset: 0,
         zIndex: 90,
-        background: 'var(--color-yaqing)',
+        // 从 v1 的纯鸦青黑（阴间感）改为霞光金 → 宣纸的明亮渐变
+        background:
+          'radial-gradient(70% 50% at 50% 42%, rgba(243,217,164,0.55), transparent 72%), linear-gradient(180deg, #2d2418 0%, #6b4a24 44%, #a67c2e 100%)',
         display: 'flex',
         flexDirection: 'column',
         alignItems: 'center',
         justifyContent: 'center',
         gap: 20,
+        animation: 'fadeUp 420ms ease-out',
       }}
     >
       {/* 月令播报 */}
@@ -541,8 +810,7 @@ export function IntroSequence({
             fontFamily: 'var(--font-brush)',
             fontSize: 15,
             letterSpacing: 6,
-            color: 'var(--color-hupo)',
-            opacity: step >= 0 ? 1 : 0,
+            color: 'var(--color-miaojin-light)',
             animation: 'fadeUp 600ms ease-out',
           }}
         >
@@ -557,8 +825,9 @@ export function IntroSequence({
             fontFamily: 'var(--font-brush)',
             fontSize: 78,
             letterSpacing: 10,
-            color: 'var(--color-gaosu)',
-            textShadow: '0 0 34px rgba(245,197,24,0.42), 0 6px 0 rgba(0,0,0,0.4)',
+            color: 'var(--color-xuanzhi-warm)',
+            textShadow:
+              '0 0 34px rgba(245,197,24,0.6), 0 2px 0 rgba(166,124,46,0.9), 0 8px 24px rgba(0,0,0,0.35)',
             animation: 'brushReveal 900ms ease-out',
           }}
         >
@@ -574,11 +843,13 @@ export function IntroSequence({
               fontFamily: 'var(--font-seal)',
               fontSize: 13,
               background: 'var(--color-zhuhong)',
-              color: 'var(--color-gaosu)',
+              color: 'var(--color-xuanzhi-warm)',
               padding: '5px 9px',
               borderRadius: 3,
               transform: 'rotate(-5deg)',
               animation: 'sealDrop 520ms ease-out',
+              fontWeight: 700,
+              border: '1px solid rgba(236,203,122,0.7)',
             }}
           >
             {char.rizhu}
@@ -590,11 +861,13 @@ export function IntroSequence({
                 fontFamily: 'var(--font-seal)',
                 fontSize: 13,
                 background: i === 0 ? 'var(--color-shiqing)' : 'var(--color-songhua)',
-                color: 'var(--color-gaosu)',
+                color: 'var(--color-xuanzhi-warm)',
                 padding: '5px 9px',
                 borderRadius: 3,
                 transform: `rotate(${-3 + i * 6}deg)`,
                 animation: `sealDrop 520ms ease-out ${i * 120}ms both`,
+                fontWeight: 700,
+                border: '1px solid rgba(236,203,122,0.6)',
               }}
             >
               {SHI_SHEN_MAP[s]?.name ?? s}
@@ -603,7 +876,7 @@ export function IntroSequence({
         </div>
       )}
 
-      <div style={{ fontSize: 10, color: 'rgba(232,228,216,0.35)', marginTop: 26 }}>点击跳过</div>
+      <div style={{ fontSize: 10, color: 'rgba(251,247,236,0.6)', marginTop: 26 }}>点击跳过</div>
     </div>
   );
 }

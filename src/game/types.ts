@@ -247,18 +247,39 @@ export interface Enemy extends Combatant {
   chargeStacks: number;
   /** 本回合实际执行的意图（供 UI 展示前摇） */
   currentIntent?: EnemyIntent;
+  /** 敌方「势」：出招消耗的资源，让敌人也有资源博弈（设计哲学：阴阳互根／无代价转换禁止） */
+  shi: number;
+  /** 敌方势的上限 */
+  shiCap: number;
 }
 
 export interface EnemyIntent {
-  /** 意图类型：攻击 / 蓄力 / 防御 / 群攻 */
-  type: 'attack' | 'charge' | 'guard' | 'aoe';
+  /** 意图类型：攻击 / 蓄力 / 防御 / 群攻 / 增益 / 削弱 */
+  type: 'attack' | 'charge' | 'guard' | 'aoe' | 'buff' | 'debuff';
   /** 倍率 */
   mul: number;
   /** 伤害数值（直接用，敌人不吃玩家的攻击力体系） */
   damage?: number;
   wuxing?: WuXing;
   label: string;
+  /** 招式品阶：决定意图卡的描边与光效 —— 基础 / 精妙 / 凶险 / 杀招 */
+  grade?: IntentGrade;
+  /** 招式要消耗的「势」（敌方资源）；不足时该意图不可用 */
+  cost?: number;
+  /** 是否标记为「可弹反」的招式（默认 attack / aoe 可弹反） */
+  parryable?: boolean;
+  /** 招式附加的状态（打向玩家） */
+  inflict?: { id: StatusId; stacks: number; duration: number };
+  /** 招式附带的自增益（buff 类意图） */
+  selfShield?: number;
+  /** 招式附带的自蓄力（charge 类意图） */
+  selfCharge?: number;
+  /** 招式短注，展示在意图卡上 */
+  note?: string;
 }
+
+/** 招式品阶 */
+export type IntentGrade = 'base' | 'art' | 'dire' | 'kill';
 
 /* ============================== 月令 / 节气 / 十神 ============================== */
 

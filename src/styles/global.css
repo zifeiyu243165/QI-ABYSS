@@ -17,8 +17,8 @@ body,
 
 body {
   font-family: var(--font-body);
-  background: #0e1117; /* 画布外的剧场黑，非游戏用色 */
-  color: var(--color-gaosu);
+  background: #2a2620; /* 画布外的剧场暗色，非游戏用色（暖调棕，避免冷黑） */
+  color: var(--color-card-text);
   display: flex;
   align-items: center;
   justify-content: center;
@@ -35,6 +35,10 @@ button {
 }
 
 /* ===================== 屏幕框 ===================== */
+/*
+   汉唐明媚：以宣纸暖白为底，叠青绿山水云雾（非灰暗枯山水）。
+   —— 设计哲学 §2.2：禁止纯黑背景；色温整体拉高。
+*/
 .screen-frame {
   position: relative;
   width: var(--screen-w);
@@ -42,23 +46,44 @@ button {
   max-width: 100vw;
   max-height: 100vh;
   overflow: hidden;
-  background: var(--color-yaqing);
+  /* 宣纸 → 青绿山水的明快渐变底 */
+  background:
+    linear-gradient(180deg, var(--color-yunwu) 0%, var(--color-xuanzhi) 46%, var(--color-zhujian) 100%);
   display: flex;
   flex-direction: column;
 }
 
-/* 宣纸纹理：鸦青底 + 缟素微光 */
+/* 描金细边：框住整屏，营造「屏风 / 卷轴」的边界感 */
+.screen-frame::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  z-index: 95;
+  border: 2px solid transparent;
+  background:
+    linear-gradient(180deg, rgba(212, 168, 67, 0.55), rgba(166, 124, 46, 0.28)) border-box;
+  -webkit-mask:
+    linear-gradient(#fff 0 0) padding-box,
+    linear-gradient(#fff 0 0);
+  -webkit-mask-composite: xor;
+  mask-composite: exclude;
+}
+
+/* 宣纸肌理 + 云霞光晕：让底色「透」而不是「闷」 */
 .screen-frame::before {
   content: "";
   position: absolute;
   inset: 0;
   pointer-events: none;
   background:
-    radial-gradient(120% 80% at 50% 0%, rgba(232, 228, 216, 0.08), transparent 60%),
-    radial-gradient(90% 60% at 50% 100%, rgba(11, 46, 89, 0.5), transparent 70%);
+    radial-gradient(90% 42% at 50% 0%, rgba(243, 217, 164, 0.55), transparent 66%),
+    radial-gradient(70% 36% at 12% 22%, rgba(159, 196, 221, 0.4), transparent 70%),
+    radial-gradient(70% 36% at 88% 34%, rgba(127, 168, 140, 0.32), transparent 72%),
+    radial-gradient(120% 60% at 50% 108%, rgba(212, 168, 67, 0.24), transparent 70%);
 }
 
-/* 竖屏在手机上的自适应：宽不足时等比缩放由 JS 处理，这里保证不溢出 */
+/* 竖屏在手机上的自适应 */
 @media (max-width: 420px) {
   .screen-frame {
     width: 100vw;
@@ -68,7 +93,7 @@ button {
 
 /* ===================== 通用动画 ===================== */
 
-/* 卡帧：由 JS 加 class 触发，时长随伤害倍率内联设置 */
+/* 卡帧 */
 .hitstop-flash {
   animation: hitstopFlash var(--hitstop-duration, 150ms) steps(1) 1;
 }
@@ -94,7 +119,7 @@ button {
 }
 .shake { animation: shake 260ms ease-out; }
 
-/* 数字爆裂：从受击点弹出后回落 */
+/* 数字爆裂：毛笔字白字 + 朱红暴击 */
 @keyframes numberPop {
   0% { transform: translate(-50%, 0) scale(0.3); opacity: 0; }
   25% { transform: translate(-50%, -26px) scale(1.6); opacity: 1; }
@@ -144,15 +169,15 @@ button {
 
 /* ===================== 弹反微操 ===================== */
 
-/* 判定游标：由 CSS 动画驱动，避免逐帧 setState 卡顿 */
+/* 判定游标 */
 .parry-cursor {
   position: absolute;
   left: 0;
   top: 0;
   bottom: 0;
-  width: 4px;
-  background: var(--color-gaosu);
-  box-shadow: 0 0 10px rgba(232, 228, 216, 0.95);
+  width: 5px;
+  background: linear-gradient(180deg, var(--color-xuanzhi-warm), var(--color-miaojin));
+  box-shadow: 0 0 12px rgba(245, 197, 24, 0.95), 0 0 26px rgba(245, 197, 24, 0.6);
   animation-name: parrySweep;
   animation-timing-function: linear;
   animation-fill-mode: forwards;
@@ -160,7 +185,7 @@ button {
 
 @keyframes parrySweep {
   from { left: 0; }
-  to { left: calc(100% - 4px); }
+  to { left: calc(100% - 5px); }
 }
 
 /* 敌方蓄力脉动：前摇阶段的攻击预警 */
@@ -169,13 +194,13 @@ button {
 }
 
 @keyframes enemyCharging {
-  0%, 100% { transform: scale(1); filter: drop-shadow(0 0 6px rgba(194, 59, 34, 0.5)); }
-  50% { transform: scale(1.07); filter: drop-shadow(0 0 22px rgba(194, 59, 34, 0.95)); }
+  0%, 100% { transform: scale(1); filter: drop-shadow(0 0 7px rgba(194, 59, 34, 0.6)); }
+  50% { transform: scale(1.07); filter: drop-shadow(0 0 24px rgba(194, 59, 34, 0.98)); }
 }
 
 /* 玩家受击红闪 */
 @keyframes hurtFlash {
-  0% { background: rgba(194, 59, 34, 0.4); }
+  0% { background: rgba(194, 59, 34, 0.42); }
   100% { background: transparent; }
 }
 
@@ -190,6 +215,61 @@ button {
   to { opacity: 1; transform: translateY(0); }
 }
 
+/* ===================== 汉唐明媚 · 新增动效 ===================== */
+
+/* 炁条流光：呼应「炁」的流动感 */
+@keyframes qiFlow {
+  0% { background-position: 0% 50%; }
+  100% { background-position: 200% 50%; }
+}
+
+.qi-flow {
+  background-size: 200% 100%;
+  animation: qiFlow 2.6s linear infinite;
+}
+
+/* 云霞缓移：背景的仙气 */
+@keyframes cloudDrift {
+  0% { transform: translateX(-3%) translateY(0); }
+  50% { transform: translateX(3%) translateY(-1.5%); }
+  100% { transform: translateX(-3%) translateY(0); }
+}
+
+.cloud-drift {
+  animation: cloudDrift 26s ease-in-out infinite;
+}
+
+/* 描金边框呼吸：重要按钮的「盛世」质感 */
+@keyframes goldBreathe {
+  0%, 100% { box-shadow: 0 0 0 0 rgba(212, 168, 67, 0.35), inset 0 1px 0 rgba(255, 246, 220, 0.7); }
+  50% { box-shadow: 0 0 18px 2px rgba(212, 168, 67, 0.5), inset 0 1px 0 rgba(255, 246, 220, 0.9); }
+}
+
+.gold-breathe {
+  animation: goldBreathe 3.2s ease-in-out infinite;
+}
+
+/* 卡牌选中：放大弹出（替代原「四块砖」的沉重感） */
+@keyframes cardPop {
+  0% { transform: translateY(0) scale(1); }
+  60% { transform: translateY(-16px) scale(1.1); }
+  100% { transform: translateY(-14px) scale(1.08); }
+}
+
+.card-pop {
+  animation: cardPop 200ms cubic-bezier(0.2, 0.9, 0.3, 1.2) forwards;
+}
+
+/* 卡牌打出：化作流光飞向敌人 */
+@keyframes cardFly {
+  0% { transform: translateY(-14px) scale(1.08); opacity: 1; }
+  100% { transform: translateY(-180px) scale(0.4) rotate(8deg); opacity: 0; }
+}
+
+.card-fly {
+  animation: cardFly 320ms cubic-bezier(0.5, 0, 0.9, 0.4) forwards;
+}
+
 /* ===================== 滚动条 ===================== */
 ::-webkit-scrollbar { width: 4px; height: 4px; }
-::-webkit-scrollbar-thumb { background: rgba(232, 228, 216, 0.25); border-radius: 2px; }
+::-webkit-scrollbar-thumb { background: rgba(138, 90, 52, 0.4); border-radius: 2px; }

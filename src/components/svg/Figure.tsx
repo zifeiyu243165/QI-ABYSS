@@ -8,17 +8,18 @@ import { useState } from 'react';
 const BASE = import.meta.env.BASE_URL;
 
 const CHAR_IMG: Record<string, string> = {
-  luqingya: `${BASE}art/char_luqingya.png`,
-  sujiangxue: `${BASE}art/char_sujiangxue.png`,
-  xiewujiu: `${BASE}art/char_xiewujiu.png`,
+  luqingya: `${BASE}art/char_陆青崖.png`,
+  sujiangxue: `${BASE}art/char_苏绛雪.png`,
+  xiewujiu: `${BASE}art/char_谢无咎.png`,
 };
 
 const ENEMY_IMG: Record<string, string> = {
-  jiaozao: `${BASE}art/enemy_jiaozao.png`,
-  jiaban: `${BASE}art/enemy_jiaban.png`,
-  tanchen: `${BASE}art/enemy_tanchen.png`,
-  chunlei: `${BASE}art/enemy_chunlei.png`,
-  bingyan: `${BASE}art/enemy_bingyan.png`,
+  jiaozao: `${BASE}art/enemy_焦躁鬼.png`,
+  jiaban: `${BASE}art/enemy_加班怨灵.png`,
+  tanchen: `${BASE}art/enemy_贪嗔蠹.png`,
+  jinwu: `${BASE}art/enemy_金吾卫.png`,
+  chunlei: `${BASE}art/enemy_春雷兽.png`,
+  bingyan: `${BASE}art/enemy_冰魇.png`,
 };
 
 interface CharacterFigureProps {
