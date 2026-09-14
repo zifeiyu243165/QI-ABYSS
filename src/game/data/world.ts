@@ -45,18 +45,18 @@ export const SHI_SHEN_MAP: Record<string, ShiShen> = Object.fromEntries(
 /* ============================== 月令（地支） ============================== */
 
 export const LUNAR_MONTHS: LunarMonth[] = [
-  { id: 'yin', zhi: '寅', wuxing: 'mu', label: '寅月·木旺', desc: '木行术法 +25%，金行术法 -20%', buffMul: 1.0, wxBonus: { mu: 0.25, jin: -0.2 }, spellCostDelta: 0, defMul: 1 },
-  { id: 'mao', zhi: '卯', wuxing: 'mu', label: '卯月·木旺', desc: '木行术法 +25%，金行术法 -20%', buffMul: 1.0, wxBonus: { mu: 0.25, jin: -0.2 }, spellCostDelta: 0, defMul: 1 },
-  { id: 'chen', zhi: '辰', wuxing: 'tu', label: '辰月·土旺', desc: '防御/护盾 +30%，所有术法消耗 +1 炁', buffMul: 1.0, wxBonus: {}, spellCostDelta: 1, defMul: 1.3 },
-  { id: 'si', zhi: '巳', wuxing: 'huo', label: '巳月·火旺', desc: '火行术法 +25%，水行术法 -20%', buffMul: 1.0, wxBonus: { huo: 0.25, shui: -0.2 }, spellCostDelta: 0, defMul: 1 },
-  { id: 'wu', zhi: '午', wuxing: 'huo', label: '午月·火旺', desc: '火行术法 +25%，水行术法 -20%', buffMul: 1.0, wxBonus: { huo: 0.25, shui: -0.2 }, spellCostDelta: 0, defMul: 1 },
-  { id: 'wei', zhi: '未', wuxing: 'tu', label: '未月·土旺', desc: '防御/护盾 +30%，所有术法消耗 +1 炁', buffMul: 1.0, wxBonus: {}, spellCostDelta: 1, defMul: 1.3 },
-  { id: 'shen', zhi: '申', wuxing: 'jin', label: '申月·金旺', desc: '物理攻击（金器）+25%，木行术法 -20%', buffMul: 1.0, wxBonus: { jin: 0.25, mu: -0.2 }, spellCostDelta: 0, defMul: 1 },
-  { id: 'you', zhi: '酉', wuxing: 'jin', label: '酉月·金旺', desc: '物理攻击（金器）+25%，木行术法 -20%', buffMul: 1.0, wxBonus: { jin: 0.25, mu: -0.2 }, spellCostDelta: 0, defMul: 1 },
-  { id: 'xu', zhi: '戌', wuxing: 'tu', label: '戌月·土旺', desc: '防御/护盾 +30%，所有术法消耗 +1 炁', buffMul: 1.0, wxBonus: {}, spellCostDelta: 1, defMul: 1.3 },
-  { id: 'hai', zhi: '亥', wuxing: 'shui', label: '亥月·水旺', desc: '水行术法 +25%，土行术法 -20%', buffMul: 1.0, wxBonus: { shui: 0.25, tu: -0.2 }, spellCostDelta: 0, defMul: 1 },
-  { id: 'zi', zhi: '子', wuxing: 'shui', label: '子月·水旺', desc: '水行术法 +25%，土行术法 -20%', buffMul: 1.0, wxBonus: { shui: 0.25, tu: -0.2 }, spellCostDelta: 0, defMul: 1 },
-  { id: 'chou', zhi: '丑', wuxing: 'tu', label: '丑月·土旺', desc: '防御/护盾 +30%，所有术法消耗 +1 炁', buffMul: 1.0, wxBonus: {}, spellCostDelta: 1, defMul: 1.3 },
+  { id: 'yin', zhi: '寅', wuxing: 'mu', label: '寅月·木旺', desc: '木行术法 +25%，金行术法 -20%', wxBonus: { mu: 0.25, jin: -0.2 }, spellCostDelta: 0, defMul: 1 },
+  { id: 'mao', zhi: '卯', wuxing: 'mu', label: '卯月·木旺', desc: '木行术法 +25%，金行术法 -20%', wxBonus: { mu: 0.25, jin: -0.2 }, spellCostDelta: 0, defMul: 1 },
+  { id: 'chen', zhi: '辰', wuxing: 'tu', label: '辰月·土旺', desc: '防御/护盾 +30%，所有术法消耗 +1 炁', wxBonus: {}, spellCostDelta: 1, defMul: 1.3 },
+  { id: 'si', zhi: '巳', wuxing: 'huo', label: '巳月·火旺', desc: '火行术法 +25%，水行术法 -20%', wxBonus: { huo: 0.25, shui: -0.2 }, spellCostDelta: 0, defMul: 1 },
+  { id: 'wu', zhi: '午', wuxing: 'huo', label: '午月·火旺', desc: '火行术法 +25%，水行术法 -20%', wxBonus: { huo: 0.25, shui: -0.2 }, spellCostDelta: 0, defMul: 1 },
+  { id: 'wei', zhi: '未', wuxing: 'tu', label: '未月·土旺', desc: '防御/护盾 +30%，所有术法消耗 +1 炁', wxBonus: {}, spellCostDelta: 1, defMul: 1.3 },
+  { id: 'shen', zhi: '申', wuxing: 'jin', label: '申月·金旺', desc: '物理攻击（金器）+25%，木行术法 -20%', wxBonus: { jin: 0.25, mu: -0.2 }, spellCostDelta: 0, defMul: 1 },
+  { id: 'you', zhi: '酉', wuxing: 'jin', label: '酉月·金旺', desc: '物理攻击（金器）+25%，木行术法 -20%', wxBonus: { jin: 0.25, mu: -0.2 }, spellCostDelta: 0, defMul: 1 },
+  { id: 'xu', zhi: '戌', wuxing: 'tu', label: '戌月·土旺', desc: '防御/护盾 +30%，所有术法消耗 +1 炁', wxBonus: {}, spellCostDelta: 1, defMul: 1.3 },
+  { id: 'hai', zhi: '亥', wuxing: 'shui', label: '亥月·水旺', desc: '水行术法 +25%，土行术法 -20%', wxBonus: { shui: 0.25, tu: -0.2 }, spellCostDelta: 0, defMul: 1 },
+  { id: 'zi', zhi: '子', wuxing: 'shui', label: '子月·水旺', desc: '水行术法 +25%，土行术法 -20%', wxBonus: { shui: 0.25, tu: -0.2 }, spellCostDelta: 0, defMul: 1 },
+  { id: 'chou', zhi: '丑', wuxing: 'tu', label: '丑月·土旺', desc: '防御/护盾 +30%，所有术法消耗 +1 炁', wxBonus: {}, spellCostDelta: 1, defMul: 1.3 },
 ];
 
 export const LUNAR_MONTH_MAP: Record<string, LunarMonth> = Object.fromEntries(

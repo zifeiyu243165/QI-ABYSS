@@ -75,7 +75,7 @@ export const CARDS: Card[] = [
   { id: 'card_lianchi', name: '连刺', kind: 'physical', costYang: 1, costYin: 0, mul: 0.45, hits: 3, aoe: false, desc: '三段连刺，每段攻击 ×0.45。' },
   { id: 'card_pojiaji', name: '破甲击', kind: 'physical', costYang: 1, costYin: 1, mul: 0.9, hits: 1, aoe: false, desc: '攻击 ×0.9，大幅削减防御。', inflict: { id: 'armorBreak', stacks: 2, duration: 2 } },
   { id: 'card_huixuan', name: '回旋斩', kind: 'physical', costYang: 3, costYin: 0, mul: 1.2, hits: 2, aoe: false, desc: '两段回旋，每段攻击 ×1.2。' },
-  { id: 'card_bengquan', name: '崩拳', kind: 'physical', costYang: 2, costYin: 0, mul: 2.0, hits: 1, aoe: false, desc: '蓄力一击，攻击 ×2.0，但本回合结束自损 5 点气血。', inflict: { id: 'weak', stacks: 1, duration: 1 } },
+  { id: 'card_bengquan', name: '崩拳', kind: 'physical', costYang: 2, costYin: 0, mul: 2.0, hits: 1, aoe: false, desc: '蓄力一击，攻击 ×2.0，附加虚弱 1 层。', inflict: { id: 'weak', stacks: 1, duration: 1 } },
   { id: 'card_jifengci', name: '疾风刺', kind: 'physical', costYang: 1, costYin: 0, mul: 0.6, hits: 2, aoe: false, desc: '两段快刺，每段攻击 ×0.6，抽 1 张牌。', draw: 1 },
 
   /* ---- 术法 10 张（五行各 2） ---- */
@@ -93,14 +93,14 @@ export const CARDS: Card[] = [
   /* ---- 功能 4 张 ---- */
   { id: 'card_huiqidan', name: '回气丹', kind: 'support', costYang: 0, costYin: 1, mul: 0, hits: 0, aoe: false, desc: '获得 2 阳炁 + 2 阴炁。', gainYang: 2, gainYin: 2 },
   { id: 'card_hushen', name: '护身咒', kind: 'support', costYang: 1, costYin: 0, mul: 0, hits: 0, aoe: false, desc: '获得 20 点护盾。', shield: 20 },
-  { id: 'card_jingxin', name: '净心咒', kind: 'support', costYang: 0, costYin: 1, mul: 0, hits: 0, aoe: false, desc: '驱散自身所有负面状态，抽 1 张牌。', draw: 1 },
+  { id: 'card_jingxin', name: '净心咒', kind: 'support', costYang: 0, costYin: 1, mul: 0, hits: 0, aoe: false, desc: '驱散自身所有负面状态，抽 1 张牌。', draw: 1, cleanse: true },
   { id: 'card_juqi', name: '聚炁', kind: 'support', costYang: 0, costYin: 0, mul: 0, hits: 0, aoe: false, desc: '抽 2 张牌，获得 1 阳炁。', draw: 2, gainYang: 1 },
 
   /* ---- 节气限定 4 张（仅对应炁候下进卡池） ---- */
-  { id: 'card_guyu', name: '谷雨·润物', kind: 'spell', wuxing: 'mu', costYang: 0, costYin: 2, mul: 0, hits: 0, aoe: false, desc: '群体回复 20% 气血。', heal: 0, solarTermOnly: 'guyu' },
+  { id: 'card_guyu', name: '谷雨·润物', kind: 'spell', wuxing: 'mu', costYang: 0, costYin: 2, mul: 0, hits: 0, aoe: false, desc: '回复 22 点气血，并抽 1 张牌。', heal: 22, draw: 1, solarTermOnly: 'guyu' },
   { id: 'card_dashu', name: '大暑·流火', kind: 'spell', wuxing: 'huo', costYang: 0, costYin: 3, mul: 1.5, hits: 1, aoe: true, desc: '全场火行伤害 ×1.5，附加灼烧。', inflict: { id: 'burn', stacks: 2, duration: 2 }, solarTermOnly: 'dashu' },
   { id: 'card_shuangjiang', name: '霜降·凝华', kind: 'spell', wuxing: 'shui', costYang: 0, costYin: 4, mul: 2.2, hits: 1, aoe: false, desc: '单体高伤 ×2.2，附加冻结。', inflict: { id: 'freeze', stacks: 1, duration: 1 }, solarTermOnly: 'shuangjiang' },
-  { id: 'card_lichun', name: '立春·破土', kind: 'spell', wuxing: 'tu', costYang: 0, costYin: 1, mul: 0, hits: 0, aoe: false, desc: '获得 2 层「势」，抽 1 张牌。', draw: 1, solarTermOnly: 'lichun' },
+  { id: 'card_lichun', name: '立春·破土', kind: 'spell', wuxing: 'tu', costYang: 0, costYin: 1, mul: 0, hits: 0, aoe: false, desc: '获得 2 层「势」（体修核心资源），抽 1 张牌。', draw: 1, gainShi: 2, solarTermOnly: 'lichun' },
 ];
 
 export const CARD_MAP: Record<string, Card> = Object.fromEntries(CARDS.map((c) => [c.id, c]));

@@ -48,6 +48,7 @@ import { CHARACTER_MAP } from '../data/actors';
 import { LUNAR_MONTH_MAP } from '../data/world';
 import { WU_XING_KE, WU_XING_SHENG } from '../constants';
 import { fireForceCritMul, fireModifyDamage } from './hooks';
+import { rand } from './rng';
 
 /* ============================== 基础数值 ============================== */
 
@@ -230,12 +231,29 @@ function counterModifier(card: { wuxing?: WuXing } | null, target: Combatant): D
   return [];
 }
 
-/** 目标防御态修正：破甲削防 / 霜寒减速（冻伤）—— 状态必须有实际效果，禁止「无响应」状态 */
-export function effectiveDefense(target: Combatant): number {
-  let def = Math.max(0, target.def);
+/** 目标防御态修正：破甲削防 / 月令土旺加防 —— 状态必须有实际效果，禁止「无响应」状态 */
+export function effectiveDefense(target: Combatant, defMul = 1): number {
+  let def = Math.max(0, target.def) * defMul;
   const armorBreak = target.statuses.find((st) => st.id === 'armorBreak');
   if (armorBreak) def *= Math.max(0, 1 - armorBreak.stacks * 0.15);
   return def;
+}
+
+/**
+ * 单次防御减伤 —— 全引擎唯一的减伤入口。
+ *
+ * 历史缺陷：battle.ts 的 applyDamageToEnemy 在管线减伤之外又减了一次，
+ * 且第二层用的是未削防的原始 e.def、并硬编码 120（绕过 DEFENSE_SOFTENING）。
+ * 结果是实际伤害被重复压低、破甲在第二层失效。现在统一走这里，调用方不得再自行减伤。
+ */
+export function applyDefense(raw: number, target: Combatant, defMul = 1): number {
+  const def = effectiveDefense(target, defMul);
+  return Math.floor(raw * (1 - def / (def + DEFENSE_SOFTENING)));
+}
+
+/** 当月月令的防御 / 护盾加成（土旺月 1.3；其余月为 1） */
+export function monthDefMul(state: BattleState): number {
+  return LUNAR_MONTH_MAP[state.lunarMonthId]?.defMul ?? 1;
 }
 
 /** 攻击方虚弱修正：虚弱使本次伤害下降（每层 -15%，上限 -45%） */
@@ -284,7 +302,7 @@ export function getCritRate(state: BattleState, target: Combatant): number {
   const wuxing = state.player.wuxing ?? char?.wuxing;
   if (wuxing && month && WU_XING_KE[month.wuxing] === wuxing) rate += SHILING_CRIT_PENALTY;
 
-  // 霜寒状态降低目标闪避无关，这里仅作占位（不可删除：future debuff）
+  // 目标侧抗性预留位（当前无目标侧增减，仅占位以固定函数签名）
   void target;
 
   return Math.max(0, Math.min(1, rate));
@@ -349,12 +367,23 @@ export function resolveDamage(
   for (const m of muls) totalMul *= m.value;
 
   // ---- 阶段 5：暴击 ----
-  const crit = opts.forceCrit === true;
+  // 真实掷骰：早期版本写死 `crit = opts.forceCrit === true`，只有「破绽」能暴击，
+  // 导致 getCritRate() 沦为死函数 —— 散修「刀尖舔血」、伤官暴伤、失令暴击惩罚全部空转。
+  let crit = opts.forceCrit === true;
+  if (!crit && !opts.isTrue) {
+    const rate = getCritRate(state, target);
+    if (rate > 0) {
+      const r = rand(state.rngState);
+      state.rngState = r.state;
+      crit = r.value < rate;
+    }
+  }
   const critMul = crit ? getCritMul(state) : 1;
 
   // ---- 阶段 6：减伤 + 刮痧下限 ----
+  const defMul = monthDefMul(state);
   const raw = base * totalMul * critMul;
-  const defense = effectiveDefense(target); // 破甲削减后的实际防御
+  const defense = effectiveDefense(target, defMul); // 破甲削减 + 月令土旺加成后的实际防御
   let afterDefense = opts.isTrue
     ? raw
     : raw * (1 - defense / (defense + DEFENSE_SOFTENING));

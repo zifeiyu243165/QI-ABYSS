@@ -56,3 +56,5 @@ Desktop.ini
 public/art/_new
 public/art/_raw_backup
 public/art/_cut
+# 抠图脚本 scripts/抠图.mjs 的原图备份（6MB+ 原始大图，可随时重新生图）
+_原图备份/

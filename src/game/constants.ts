@@ -31,8 +31,13 @@ export const SCRAPE_DEF_FACTOR = 1.5;
 /** 减伤公式中的防御软化系数：damage * (1 - def / (def + K)) */
 export const DEFENSE_SOFTENING = 120;
 
-/** 效果队列级联深度上限，防止「击杀 → 减费 → 再出牌」死循环 */
-export const MAX_CASCADE_DEPTH = 8;
+/**
+ * 麻痹：每层提供的「攻击落空」概率
+ * 麻痹来源是雷行附魔（五雷令），效果是让目标下一次动作失手。
+ */
+export const PARALYZE_MISS_PER_STACK = 0.3;
+/** 麻痹落空概率上限 */
+export const PARALYZE_MISS_CAP = 0.75;
 
 /** 基础暴击率 */
 export const BASE_CRIT_RATE = 0.15;

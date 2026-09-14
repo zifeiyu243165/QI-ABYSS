@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 import type { BattleState, Card, Combatant, DamageContext } from '../types';
-import { assertNoIllegalAddBase, getCritRate, resolveDamage } from './damage';
-import { battleReducer, cardCost, createBattleState, judgeParry } from './battle';
+import { assertNoIllegalAddBase, effectiveDefense, getCritRate, resolveDamage } from './damage';
+import { battleReducer, canPlayCard, cardCost, createBattleState, fuseCards, judgeParry } from './battle';
 import { PARRY_TELEGRAPH_MS, PARRY_WINDOW_MS, SCRAPE_RATIO } from '../constants';
 import { CARD_MAP } from '../data/cards';
 
@@ -131,5 +131,163 @@ describe('弹反判定窗口', () => {
     expect(judgeParry(PARRY_TELEGRAPH_MS - 1)).toBe('early');
     expect(judgeParry(PARRY_TELEGRAPH_MS + 1)).toBe('perfect');
     expect(judgeParry(PARRY_TELEGRAPH_MS + PARRY_WINDOW_MS + 1)).toBe('miss');
+  });
+});
+
+/* ================================================================== */
+
+/**
+ * 以下为「审计缺陷」的回归固化。
+ * 这些缺陷的共同点是：静态阅读代码时看起来完全正常，只有拿管线计算值与实战值对比才暴露。
+ */
+describe('回归：防御减伤只生效一次', () => {
+  it('管线 final 必须等于实战扣血（不再二次减伤）', () => {
+    const s = createBattleState({
+      characterId: 'luqingya',
+      equipment: ['tangdao', null], // 卸掉法器，排除附魔伤害干扰
+      campaignId: 'camp_3', // 春雷兽 380 血，不会被一击打死导致扣血被截断
+      lunarMonthId: 'shen',
+      solarTermId: 'dongzhi', // 无伤害修饰的节气
+      seed: 999,
+    });
+    const enemy = s.enemies[0]!;
+    const card = CARD_MAP['card_zhanfeng']!;
+
+    // 让「预测」与「实战」从同一个 rngState 出发，暴击结果才会一致
+    const rng0 = s.rngState;
+    const bd = resolveDamage(ctxFor({ ...s, rngState: rng0 }, card, enemy), enemy);
+
+    const hpBefore = enemy.hp;
+    const played = battleReducer(
+      { ...s, rngState: rng0, hand: [{ ...card, uid: 'reg1' }], yang: 10, yin: 10 },
+      { type: 'PLAY_CARD', cardId: 'reg1', targetId: enemy.id },
+    );
+    const after = played.enemies.find((e) => e.id === enemy.id)!;
+
+    expect(hpBefore - after.hp).toBe(bd.final);
+  });
+});
+
+describe('回归：暴击率真正参与结算', () => {
+  it('散修拉满阴阳差后能打出暴击（getCritRate 不再是死函数）', () => {
+    let crits = 0;
+    for (let i = 0; i < 60; i++) {
+      const s = createBattleState({
+        characterId: 'xiewujiu', // 散修 · 刀尖舔血
+        equipment: ['miaodao', null],
+        campaignId: 'camp_3',
+        lunarMonthId: 'chen', // 土旺月，避免得令/金旺加成的干扰
+        solarTermId: 'dongzhi',
+        seed: 2000 + i,
+      });
+      s.yang = 10;
+      s.yin = 0; // 阴阳差 = 8（上限）
+      const enemy = s.enemies[0]!;
+      const bd = resolveDamage(ctxFor(s, CARD_MAP['card_zhanfeng']!, enemy), enemy);
+      if (bd.crit) crits++;
+    }
+    // 暴击率 = 15% 基础 − 20%（伤官）+ 8 × 4%（散修）= 27%，60 次采样期望约 16 次
+    expect(crits).toBeGreaterThan(3);
+  });
+});
+
+describe('回归：融合奥义按实例删除，不误伤同名手牌', () => {
+  it('手上有 3 张同 id 卡时融合两张，应仍剩 2 张', () => {
+    const s = base();
+    const zf = CARD_MAP['card_zhanfeng']!;
+    const lc = CARD_MAP['card_lianchi']!;
+    const hand = [
+      { ...zf, uid: 'u1' },
+      { ...zf, uid: 'u2' },
+      { ...zf, uid: 'u3' },
+      { ...lc, uid: 'u4' },
+    ];
+
+    const result = battleReducer(
+      { ...s, hand, yang: 10, yin: 10 },
+      { type: 'FUSE', cardAId: 'u1', cardBId: 'u4', targetId: s.enemies[0]!.id },
+    );
+
+    // 早期按 id 过滤的写法会把 u1/u2/u3 一并删掉，这里必须剩 2 张
+    expect(result.hand.filter((c) => c.id === zf.id).length).toBe(2);
+  });
+});
+
+describe('回归：沉默与麻痹不再是「无响应状态」', () => {
+  it('沉默只封锁术法牌，物理牌不受影响', () => {
+    const s = base();
+    const spell = CARD_MAP['card_lihuo']!;
+    const physical = CARD_MAP['card_zhanfeng']!;
+
+    expect(canPlayCard(s, spell)).toBe(true);
+
+    const silenced: BattleState = {
+      ...s,
+      player: {
+        ...s.player,
+        statuses: [{ id: 'silence', stacks: 1, duration: 2 }],
+      },
+    };
+
+    expect(canPlayCard(silenced, spell)).toBe(false);
+    expect(canPlayCard(silenced, physical)).toBe(true);
+  });
+});
+
+describe('回归：月令 defMul 真正参与计算', () => {
+  it('土旺月的防御加成生效于 effectiveDefense', () => {
+    const enemy = { ...base().enemies[0]!, def: 20 };
+    const plain = effectiveDefense(enemy, 1);
+    const tumonth = effectiveDefense(enemy, 1.3);
+    expect(tumonth).toBeCloseTo(plain * 1.3, 5);
+  });
+});
+
+describe('回归：净心咒真正驱散负面状态（此前 desc 声明了、引擎零实现）', () => {
+  it('打出后自身负面状态被清空', () => {
+    const s = base();
+    const jx = { ...CARD_MAP['card_jingxin']!, uid: 'jx' };
+    const withDebuff: BattleState = {
+      ...s,
+      yin: 10,
+      hand: [jx],
+      player: {
+        ...s.player,
+        statuses: [
+          { id: 'weak', stacks: 2, duration: 2 },
+          { id: 'burn', stacks: 1, duration: 1 },
+        ],
+      },
+    };
+
+    const r = battleReducer(withDebuff, { type: 'PLAY_CARD', cardId: 'jx' });
+    expect(r.player.statuses.length).toBe(0);
+    // 同时仍要完成「抽 1 张牌」的既有承诺
+    expect(r.hand.length).toBeGreaterThanOrEqual(1);
+  });
+});
+
+describe('回归：立春·破土真正给予「势」（此前是空声明）', () => {
+  it('体修架势下获得 2 层势', () => {
+    const s = base();
+    const lc = { ...CARD_MAP['card_lichun']!, uid: 'lc' };
+    const st: BattleState = { ...s, stance: 'tixiu', shi: 0, yin: 10, hand: [lc] };
+
+    const r = battleReducer(st, { type: 'PLAY_CARD', cardId: 'lc' });
+    expect(r.shi).toBe(2);
+  });
+});
+
+describe('回归：功能牌融合不再产出「空白奥义牌」', () => {
+  it('聚炁 + 回气丹 融合后保留抽牌与回炁', () => {
+    const a = CARD_MAP['card_juqi']!; // 抽 2 张，+1 阳炁
+    const b = CARD_MAP['card_huiqidan']!; // +2 阳炁，+2 阴炁
+
+    const ult = fuseCards(a, b);
+    expect(ult.mul).toBe(0);
+    expect(ult.draw).toBe(2);
+    expect(ult.gainYang).toBe(3);
+    expect(ult.gainYin).toBe(2);
+    expect(ult.desc).not.toContain('无实效果');
   });
 });

@@ -7,11 +7,13 @@ import type {
   BattleState,
   Card,
   DamageContext,
+  DamageNumber,
   Effect,
   Enemy,
   QiType,
   StanceId,
   StatusId,
+  WuXing,
 } from '../types';
 import {
   DRAW_PER_TURN,
@@ -23,7 +25,8 @@ import {
   FLAW_COUNTER_THRESHOLD,
   FLAW_DURATION,
   HAND_LIMIT,
-  MAX_CASCADE_DEPTH,
+  PARALYZE_MISS_CAP,
+  PARALYZE_MISS_PER_STACK,
   PARRY_COUNTER_MUL,
   PARRY_TELEGRAPH_MS,
   PARRY_TOTAL_MS,
@@ -45,7 +48,7 @@ import { ENEMY_MAP, CAMPAIGNS } from '../data/actors';
 import { LUNAR_MONTH_MAP, STANCES } from '../data/world';
 import { SHI_SHEN_MAP } from '../data/world';
 import { WU_XING_KE } from '../constants';
-import { getEffectiveAtk, getHits, getQiCap, resolveDamage, resolveKaitian } from './damage';
+import { applyDefense, getEffectiveAtk, getHits, getQiCap, monthDefMul, resolveDamage, resolveKaitian } from './damage';
 import { chance, rand, shuffle } from './rng';
 import {
   fireBattleStart,
@@ -74,6 +77,11 @@ function aliveEnemies(s: BattleState): Enemy[] {
   return s.enemies.filter((e) => e.hp > 0);
 }
 
+/**
+ * 伤害数字的落点。注意：**刻意用全量敌人（含已阵亡者）**——
+ * UI 仍会把阵亡敌人留在场上（降透明度 + 灰度），若只按存活者算下标，
+ * 数字就会与立绘错位。此处与 BattleScreen 的渲染顺序保持一致。
+ */
 function enemyPos(s: BattleState, enemyId: string): { x: number; y: number } {
   const list = s.enemies;
   const idx = list.findIndex((e) => e.id === enemyId);
@@ -86,7 +94,7 @@ function addNumber(
   s: BattleState,
   targetId: string,
   amount: number,
-  kind: 'physical' | 'heal' | 'true' | Card['wuxing'] extends undefined ? never : string,
+  kind: 'physical' | 'heal' | 'true' | WuXing,
   crit: boolean,
   wuxing?: string,
 ): void {
@@ -96,7 +104,7 @@ function addNumber(
     id: s.pendingNumbers.length + s.turn * 1000 + s.cardsPlayedThisTurn * 17 + 1,
     targetId,
     amount,
-    kind: (wuxing ?? kind) as never,
+    kind: (wuxing ?? kind) as DamageNumber['kind'],
     crit,
     x: pos.x,
     y: pos.y,
@@ -105,6 +113,11 @@ function addNumber(
 
 function hasStatus(c: { statuses: { id: StatusId }[] }, id: StatusId): boolean {
   return c.statuses.some((st) => st.id === id);
+}
+
+/** 取某张手牌的实例下标。以 uid 为准（同 id 手牌有多份），兼容旧的按 id 传参。 */
+function findCardIndex(s: BattleState, key: string): number {
+  return s.hand.findIndex((c) => c.uid === key || c.id === key);
 }
 
 /* ============================== 创建战局 ============================== */
@@ -126,11 +139,12 @@ export function createBattleState(input: CreateBattleInput): BattleState {
 
   // 组卡池：基础牌 + 本局节气限定牌
   let pool = CARDS.filter((c) => !c.solarTermOnly || c.solarTermOnly === input.solarTermId);
-  pool = pool.filter((c) => c.mul > 0 || c.heal || c.shield || c.draw || c.gainYang || c.gainYin);
-  const deck = [];
+  pool = pool.filter((c) => c.mul > 0 || c.heal || c.shield || c.draw || c.cleanse || c.gainShi || c.gainYang || c.gainYin);
+  const deck: Card[] = [];
   for (const c of pool) {
-    deck.push({ ...c });
-    deck.push({ ...c });
+    // 每张卡在牌库里两份：id 相同、uid 不同。手牌的一切定位都必须用 uid。
+    deck.push({ ...c, uid: `c${deck.length}` });
+    deck.push({ ...c, uid: `c${deck.length}` });
   }
 
   const enemies: Enemy[] = campaign.enemyIds
@@ -345,6 +359,8 @@ export function substituteRatio(s: BattleState): number {
 }
 
 export function canPlayCard(s: BattleState, card: Card): boolean {
+  // 沉默：术法牌不可打出（金吾卫「锁链缠足」的效果落点 —— 此前该状态零实现）
+  if (card.kind === 'spell' && hasStatus(s.player, 'silence')) return false;
   const cost = cardCost(s, card);
   return tryPay(s, cost, substituteRatio(s)) !== null;
 }
@@ -380,7 +396,7 @@ function startPlayerTurn(s: BattleState): BattleState {
     next.yin = Math.min(next.yinCap, next.yin + 1);
   }
 
-  // 灼烧结算（玩家）
+  // 灼烧结算（玩家）—— 刻意保留「保底 1 血」：DOT 不直接击杀玩家，避免读条式暴毙
   const burn = next.player.statuses.find((st) => st.id === 'burn');
   if (burn) {
     const dmg = burn.stacks * 4;
@@ -401,7 +417,8 @@ function startPlayerTurn(s: BattleState): BattleState {
   drawCards(next, DRAW_PER_TURN);
 
   const after = applyEffects(next, fireTurnStart(ctxOf(next)));
-  return tickStatuses(after);
+  // 灼烧可能在回合开始杀死最后一个敌人 —— 必须补判胜负，否则胜利会延迟到下一个动作
+  return checkEnd(tickStatuses(after));
 }
 
 function endPlayerTurn(s: BattleState): BattleState {
@@ -455,10 +472,13 @@ function tickStatuses(s: BattleState): BattleState {
 
 /* ============================== 出牌 ============================== */
 
-function playCard(s: BattleState, cardId: string, targetId?: string): BattleState {
-  const idx = s.hand.findIndex((c) => c.id === cardId);
+function playCard(s: BattleState, cardKey: string, targetId?: string): BattleState {
+  const idx = findCardIndex(s, cardKey);
   if (idx < 0) return s;
   const card = s.hand[idx]!;
+
+  // 沉默：术法牌被封（与 canPlayCard 同源校验，防止绕过 UI 直接 dispatch）
+  if (card.kind === 'spell' && hasStatus(s.player, 'silence')) return s;
 
   const cost = cardCost(s, card);
   const paid = tryPay(s, cost, substituteRatio(s));
@@ -499,7 +519,8 @@ function playCard(s: BattleState, cardId: string, targetId?: string): BattleStat
   }
 
   if (card.shield) {
-    const amount = fireModifyHeal(next, card.shield);
+    // 月令土旺：护盾 +30%（此前 defMul 字段被引擎零读取，是空声明）
+    const amount = Math.floor(fireModifyHeal(next, card.shield) * monthDefMul(next));
     next.player.shield += amount;
     pushLog(next, `获得 ${amount} 点护盾`);
   }
@@ -507,7 +528,20 @@ function playCard(s: BattleState, cardId: string, targetId?: string): BattleStat
   if (card.gainYang) next.yang = Math.min(next.yangCap, next.yang + card.gainYang);
   if (card.gainYin) next.yin = Math.min(next.yinCap, next.yin + card.gainYin);
 
-  if (card.mul > 0 && (card.kind === 'physical' || card.kind === 'spell')) {
+  // 麻痹：攻击牌有概率落空（每层 30%，上限 75%）—— 状态必须双向生效，此前该状态零实现
+  let missed = false;
+  const paraStacks = next.player.statuses.find((st) => st.id === 'paralyze')?.stacks ?? 0;
+  if (paraStacks > 0 && (card.kind === 'physical' || card.kind === 'spell')) {
+    const missChance = Math.min(PARALYZE_MISS_CAP, paraStacks * PARALYZE_MISS_PER_STACK);
+    const r = rand(next.rngState);
+    next.rngState = r.state;
+    if (r.value < missChance) {
+      missed = true;
+      pushLog(next, `麻痹发作，「${card.name}」落空`);
+    }
+  }
+
+  if (!missed && card.mul > 0 && (card.kind === 'physical' || card.kind === 'spell')) {
     dealCardDamage(next, card, targetId);
   }
 
@@ -523,6 +557,24 @@ function playCard(s: BattleState, cardId: string, targetId?: string): BattleStat
   }
 
   if (card.draw) drawCards(next, card.draw);
+
+  // 净心咒：驱散自身全部负面状态（此前 desc 声明了驱散，引擎零实现 → 空壳牌）
+  if (card.cleanse && next.player.statuses.length > 0) {
+    const removed = next.player.statuses.length;
+    next.player.statuses = [];
+    pushLog(next, `净心：驱散 ${removed} 种负面状态`);
+  }
+
+  // 立春·破土：直接获得「势」（体修核心资源；非体修架势下无「势」概念，不生效）
+  if (card.gainShi) {
+    if (next.stance === 'tixiu') {
+      const before = next.shi;
+      next.shi = Math.min(SHI_CAP, next.shi + card.gainShi);
+      if (next.shi > before) pushLog(next, `破土：获得 ${next.shi - before} 层「势」`);
+    } else {
+      pushLog(next, '「势」为体修专属资源，当前架势下不生效');
+    }
+  }
 
   // 架势相关
   if (card.kind === 'physical') {
@@ -560,7 +612,7 @@ function dealCardDamage(s: BattleState, card: Card, targetId?: string): void {
   // 体修 10 层：破军 —— 攻击 × 层数的真实伤害
   if (s.stance === 'tixiu' && s.shi >= SHI_CAP && card.kind === 'physical') {
     const dmg = resolveTrueShi(s);
-    applyDamageToEnemy(s, first.id, dmg, true, 'physical');
+    applyDamageToEnemy(s, first.id, dmg, 'physical');
     s.shi = 0;
     pushLog(s, `破军！造成 ${dmg} 点真实伤害`);
     s.pendingHitstopMs = 300;
@@ -570,7 +622,7 @@ function dealCardDamage(s: BattleState, card: Card, targetId?: string): void {
   // 纯阳武圣 50 层：开天
   if (s.wushengStacks >= WUSHENG_KAITIAN_STACKS && card.kind === 'physical') {
     const dmg = resolveKaitian(s);
-    applyDamageToEnemy(s, first.id, dmg, true, 'physical');
+    applyDamageToEnemy(s, first.id, dmg, 'physical');
     s.wushengStacks = 0;
     pushLog(s, `【开天】！${dmg} 点纯粹白字伤害`);
     s.pendingHitstopMs = 300;
@@ -601,7 +653,7 @@ function dealCardDamage(s: BattleState, card: Card, targetId?: string): void {
 
     const perHit = bd.final;
     const total = perHit * hits;
-    applyDamageToEnemy(s, t.id, total, bd.isTrue, card.wuxing ?? 'physical');
+    applyDamageToEnemy(s, t.id, total, card.wuxing ?? 'physical', bd.crit);
     totalDealt += total;
 
     s.comboThisTurn += hits;
@@ -625,8 +677,10 @@ function dealCardDamage(s: BattleState, card: Card, targetId?: string): void {
   const combo = findCombo(s.equipment[0], s.equipment[1]) ?? findCombo(s.equipment[1], s.equipment[0]);
   if (combo && card.kind === 'physical') {
     const atk = getEffectiveAtk(s);
-    const enchantDmg = Math.floor(atk.effectiveAtk * card.mul * combo.mul);
-    applyDamageToEnemy(s, targets[0]!.id, enchantDmg, false, combo.wuxing);
+    const rawEnchant = Math.floor(atk.effectiveAtk * card.mul * combo.mul);
+    const enchTarget = s.enemies.find((e) => e.id === targets[0]!.id);
+    const enchantDmg = enchTarget ? applyDefense(rawEnchant, enchTarget, monthDefMul(s)) : rawEnchant;
+    applyDamageToEnemy(s, targets[0]!.id, enchantDmg, combo.wuxing);
     if (combo.inflict) {
       const cur = s.enemies.find((e) => e.id === targets[0]!.id);
       if (cur) cur.statuses.push({ ...combo.inflict, duration: combo.inflict.duration });
@@ -638,8 +692,8 @@ function dealCardDamage(s: BattleState, card: Card, targetId?: string): void {
   s.stats.maxCombo = Math.max(s.stats.maxCombo, s.comboThisTurn);
   s.stats.maxCounterHits = Math.max(s.stats.maxCounterHits, s.counterHitsThisTurn);
 
-  const after = applyEffects(s, fireDamageDealt(ctxOf(s), totalDealt));
-  void after;
+  // applyEffects 原地修改 s 并返回同一引用，无需接收返回值
+  applyEffects(s, fireDamageDealt(ctxOf(s), totalDealt));
 }
 
 function resolveTrueShi(s: BattleState): number {
@@ -649,22 +703,24 @@ function resolveTrueShi(s: BattleState): number {
 
 /* ============================== 伤害应用 ============================== */
 
+/**
+ * 应用最终伤害到敌人：只做「护盾吸收 + 扣血」。
+ *
+ * 【铁律】防御减伤必须由调用方在传入前用 applyDefense() 完成 —— 本函数绝不自行减伤。
+ * 历史缺陷：此处曾再减一次伤，且用的是未削防的原始 e.def、硬编码 120（绕过 DEFENSE_SOFTENING），
+ * 导致实际伤害被重复压低、破甲在第二层完全失效。
+ */
 function applyDamageToEnemy(
   s: BattleState,
   enemyId: string,
-  amount: number,
-  isTrue: boolean,
+  finalDamage: number,
   kind: string,
+  crit = false,
 ): void {
   const e = s.enemies.find((x) => x.id === enemyId);
   if (!e || e.hp <= 0) return;
 
-  let dmg = amount;
-  if (!isTrue) {
-    const def = Math.max(0, e.def);
-    dmg = Math.floor(dmg * (1 - def / (def + 120)));
-  }
-  dmg = Math.max(1, dmg);
+  let dmg = Math.max(1, Math.floor(finalDamage));
 
   if (e.shield > 0) {
     const absorbed = Math.min(e.shield, dmg);
@@ -672,7 +728,7 @@ function applyDamageToEnemy(
     dmg -= absorbed;
   }
   e.hp = Math.max(0, e.hp - dmg);
-  addNumber(s, enemyId, dmg, 'physical', false, kind);
+  addNumber(s, enemyId, dmg, 'physical', crit, kind);
 
   if (e.hp === 0) {
     pushLog(s, `${e.name} 被斩除`);
@@ -748,19 +804,10 @@ function doParry(s: BattleState, elapsedMs: number): BattleState {
     // 追击：无消耗反击，攻击 × 0.5
     const targets = aliveEnemies(next);
     if (targets[0]) {
-      const ctx: DamageContext = {
-        attacker: next.player,
-        defender: targets[0],
-        card: null,
-        cardsPlayedThisTurn: next.cardsPlayedThisTurn,
-        comboThisTurn: next.comboThisTurn,
-        counterHitsThisTurn: next.counterHitsThisTurn,
-        state: next,
-      };
-      void ctx;
       const atk = getEffectiveAtk(next);
-      const dmg = Math.floor(atk.effectiveAtk * PARRY_COUNTER_MUL);
-      applyDamageToEnemy(next, targets[0].id, dmg, false, 'physical');
+      const rawCounter = Math.floor(atk.effectiveAtk * PARRY_COUNTER_MUL);
+      const dmg = applyDefense(rawCounter, targets[0], monthDefMul(next));
+      applyDamageToEnemy(next, targets[0].id, dmg, 'physical');
       pushLog(next, `追击造成 ${dmg} 点伤害`);
     }
   } else if (result === 'early') {
@@ -787,6 +834,18 @@ function enemyAct(s: BattleState): BattleState {
     const intent = e.intents[(next.turn - 1) % e.intents.length];
     if (!intent) continue;
     e.currentIntent = intent;
+
+    // 麻痹：每层 30% 概率本次招式落空（上限 75%）—— 此前 paralyze 是纯粹的「无响应状态」
+    const paraStacks = e.statuses.find((st) => st.id === 'paralyze')?.stacks ?? 0;
+    if (paraStacks > 0) {
+      const missChance = Math.min(PARALYZE_MISS_CAP, paraStacks * PARALYZE_MISS_PER_STACK);
+      const roll = rand(next.rngState);
+      next.rngState = roll.state;
+      if (roll.value < missChance) {
+        pushLog(next, `${e.name} 麻痹发作，「${intent.label}」落空`);
+        continue;
+      }
+    }
 
     // 敌方「势」资源：不足则本回合只能「回气」，无法出招 —— 让敌人也有资源博弈
     const cost = intent.cost ?? 0;
@@ -842,11 +901,15 @@ function enemyAct(s: BattleState): BattleState {
       e.chargeStacks = 0;
     }
 
+    // 弹反：intent.parryable === false 的招式无视弹反结果（此前该字段从未被读取）
+    const parryable = intent.parryable !== false;
     let dmg = raw;
-    if (next.parryResult === 'perfect') {
-      dmg = 0;
-    } else if (next.parryResult === 'early') {
-      dmg = Math.floor(dmg * EARLY_PARRY_REDUCE);
+    if (parryable) {
+      if (next.parryResult === 'perfect') {
+        dmg = 0;
+      } else if (next.parryResult === 'early') {
+        dmg = Math.floor(dmg * EARLY_PARRY_REDUCE);
+      }
     }
 
     if (dmg > 0) {
@@ -868,38 +931,32 @@ function enemyAct(s: BattleState): BattleState {
 
 /* ============================== 效果队列 ============================== */
 
-function applyEffects(s: BattleState, effects: Effect[]): BattleState;
-function applyEffects(s: BattleState, effects: Effect[], depth: number): BattleState;
-function applyEffects(s: BattleState, effects: Effect[], depth = 0): BattleState {
-  if (depth > MAX_CASCADE_DEPTH) {
-    pushLog(s, '（效果级联已达上限，已截断）');
-    return s;
-  }
+/**
+ * 效果队列结算（原地修改 s 并返回同一引用）。
+ *
+ * 注：早期版本带 cascaded 数组与 MAX_CASCADE_DEPTH 递归保护，但从来没有任何分支
+ * 往 cascaded 里 push —— 整段是死代码（防死循环的「保护」实际上不存在）。已移除。
+ */
+function applyEffects(s: BattleState, effects: Effect[]): BattleState {
   if (effects.length === 0) return s;
 
-  const cascaded: Effect[] = [];
   for (const eff of effects) {
     switch (eff.kind) {
       case 'damage': {
         const t = aliveEnemies(s).find((e) => e.id === eff.targetId);
         if (!t) break;
-        const ctx: DamageContext = {
-          attacker: s.player,
-          defender: t,
-          card: null,
-          cardsPlayedThisTurn: s.cardsPlayedThisTurn,
-          comboThisTurn: s.comboThisTurn,
-          counterHitsThisTurn: s.counterHitsThisTurn,
-          state: s,
-        };
-        void ctx;
         const atk = getEffectiveAtk(s);
-        applyDamageToEnemy(s, eff.targetId, Math.floor(atk.effectiveAtk * eff.mul), eff.isTrue === true, eff.wuxing ?? 'physical');
+        const raw = Math.floor(atk.effectiveAtk * eff.mul);
+        const dmg = eff.isTrue ? raw : applyDefense(raw, t, monthDefMul(s));
+        applyDamageToEnemy(s, eff.targetId, dmg, eff.wuxing ?? 'physical');
         break;
       }
-      case 'flatDamage':
-        applyDamageToEnemy(s, eff.targetId, eff.amount, false, eff.wuxing ?? 'physical');
+      case 'flatDamage': {
+        const t = aliveEnemies(s).find((e) => e.id === eff.targetId);
+        if (!t) break;
+        applyDamageToEnemy(s, eff.targetId, applyDefense(eff.amount, t, monthDefMul(s)), eff.wuxing ?? 'physical');
         break;
+      }
       case 'heal': {
         const amount = fireModifyHeal(s, eff.amount);
         s.player.hp = Math.min(s.player.maxHp, s.player.hp + amount);
@@ -907,7 +964,7 @@ function applyEffects(s: BattleState, effects: Effect[], depth = 0): BattleState
         break;
       }
       case 'shield':
-        s.player.shield += fireModifyHeal(s, eff.amount);
+        s.player.shield += Math.floor(fireModifyHeal(s, eff.amount) * monthDefMul(s));
         break;
       case 'gainQi':
         if (eff.yang) s.yang = Math.min(s.yangCap, s.yang + eff.yang);
@@ -942,7 +999,6 @@ function applyEffects(s: BattleState, effects: Effect[], depth = 0): BattleState
     }
   }
 
-  if (cascaded.length > 0) return applyEffects(s, cascaded, depth + 1);
   return s;
 }
 
@@ -973,38 +1029,76 @@ export function canFuse(a: Card, b: Card): boolean {
 }
 
 export function fuseCards(a: Card, b: Card): Card {
+  // 此前只继承 mul / inflict，导致「聚炁 + 回气丹」这类纯功能牌融合后
+  // mul=0 且不带任何抽牌/回炁效果 —— 得到一张彻底空白的奥义牌。
+  // 现在把所有可选效果字段一并求和继承。
+  const mul = (a.mul + b.mul) * ULTIMATE_MUL;
+  const heal = (a.heal ?? 0) + (b.heal ?? 0);
+  const shield = (a.shield ?? 0) + (b.shield ?? 0);
+  const draw = (a.draw ?? 0) + (b.draw ?? 0);
+  const gainYang = (a.gainYang ?? 0) + (b.gainYang ?? 0);
+  const gainYin = (a.gainYin ?? 0) + (b.gainYin ?? 0);
+  const gainShi = (a.gainShi ?? 0) + (b.gainShi ?? 0);
+  const cleanse = Boolean(a.cleanse || b.cleanse);
+
+  const parts: string[] = [];
+  if (mul > 0) parts.push(`伤害 (${a.mul}+${b.mul})×${ULTIMATE_MUL}`);
+  if (heal > 0) parts.push(`回复 ${heal}`);
+  if (shield > 0) parts.push(`护盾 ${shield}`);
+  if (draw > 0) parts.push(`抽 ${draw} 张`);
+  if (gainYang > 0) parts.push(`+${gainYang} 阳炁`);
+  if (gainYin > 0) parts.push(`+${gainYin} 阴炁`);
+  if (gainShi > 0) parts.push(`+${gainShi} 层势`);
+  if (cleanse) parts.push('驱散负面');
+  if (parts.length === 0) parts.push('无实效果');
+
   return {
     id: `ult_${a.id}_${b.id}`,
+    uid: `ult_${a.uid ?? a.id}_${b.uid ?? b.id}`,
     name: '奥义·' + a.name.slice(0, 2) + b.name.slice(-2),
     kind: a.kind,
     wuxing: a.wuxing,
     costYang: a.costYang + b.costYang,
     costYin: a.costYin + b.costYin,
-    mul: (a.mul + b.mul) * ULTIMATE_MUL,
+    mul,
     hits: Math.max(a.hits, b.hits),
     aoe: a.aoe || b.aoe,
-    desc: `奥义：伤害 (${a.mul}+${b.mul})×${ULTIMATE_MUL}，不消耗额外回合。`,
+    desc: `奥义：${parts.join('，')}，不消耗额外回合。`,
     isUltimate: true,
     fusedFrom: [a.name, b.name],
     inflict: a.inflict ?? b.inflict,
+    heal: heal || undefined,
+    shield: shield || undefined,
+    draw: draw || undefined,
+    gainYang: gainYang || undefined,
+    gainYin: gainYin || undefined,
+    gainShi: gainShi || undefined,
+    cleanse: cleanse || undefined,
   };
 }
 
-function doFuse(s: BattleState, cardAId: string, cardBId: string, targetId?: string): BattleState {
-  const ia = s.hand.findIndex((c) => c.id === cardAId);
-  const ib = s.hand.findIndex((c) => c.id === cardBId);
-  if (ia < 0 || ib < 0) return s;
+function doFuse(s: BattleState, cardAKey: string, cardBKey: string, targetId?: string): BattleState {
+  const ia = findCardIndex(s, cardAKey);
+  const ib = findCardIndex(s, cardBKey);
+  if (ia < 0 || ib < 0 || ia === ib) return s;
   const a = s.hand[ia]!;
   const b = s.hand[ib]!;
   if (!canFuse(a, b)) return s;
 
   const next = clone(s);
   const ult = fuseCards(a, b);
-  next.hand = next.hand.filter((c) => c.id !== cardAId && c.id !== cardBId);
-  next.discard.push(a, b);
+  // 【关键】按「下标」删除，绝不按 id 过滤。
+  // 牌库里每张卡有两份（id 相同），早期用 filter(c => c.id !== a.id) 会把手上
+  // 所有同 id 的牌一起删掉 —— 实测「3 张斩风 + 连刺」融合后手牌直接清空。
+  // 先删大下标再删小下标，避免删除后索引位移。
+  const [hi, lo] = ia > ib ? [ia, ib] : [ib, ia];
+  next.discard.push(next.hand[hi]!);
+  next.hand.splice(hi, 1);
+  next.discard.push(next.hand[lo]!);
+  next.hand.splice(lo, 1);
   next.hand.push(ult);
-  pushLog(next, `双指合并 → 「${ult.name}」`);
-  return playCard(next, ult.id, targetId);
+  pushLog(next, `合并奥义 → 「${ult.name}」`);
+  return playCard(next, ult.uid!, targetId);
 }
 
 /* ============================== 调息 / 架势 ============================== */
@@ -1046,7 +1140,9 @@ function doSwitchStance(s: BattleState, stance: StanceId): BattleState {
 
 export type BattleAction =
   | { type: 'RESET'; state: BattleState }
+  /** cardId 传手牌实例 uid；兼容旧的传卡牌定义 id（取第一张匹配） */
   | { type: 'PLAY_CARD'; cardId: string; targetId?: string }
+  /** 同上 —— 只有传 uid 才能精确区分同名手牌 */
   | { type: 'FUSE'; cardAId: string; cardBId: string; targetId?: string }
   | { type: 'REGULATE'; from: QiType }
   | { type: 'SWITCH_STANCE'; stance: StanceId }

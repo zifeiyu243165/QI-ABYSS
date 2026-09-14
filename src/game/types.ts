@@ -44,8 +44,8 @@ export type StatusId =
   | 'freeze'    // 冻结：下回合无法行动
   | 'weak'      // 虚弱：伤害降低
   | 'armorBreak'// 破甲：防御降低
-  | 'paralyze'  // 麻痹
-  | 'silence'   // 沉默
+  | 'paralyze'  // 麻痹：攻击时每层 30% 概率落空（上限 75%）
+  | 'silence'   // 沉默：无法使用术法牌
   | 'flaw';     // 破绽：下回合首张攻击牌必暴击且转真实伤害
 
 /* ============================== 伤害修饰器 ============================== */
@@ -144,6 +144,12 @@ export interface DamageContext {
 
 export interface Card {
   id: string;
+  /**
+   * 手牌实例唯一标识。
+   * 牌库里每张卡都有 2 份（id 相同、对象不同），因此**任何手牌定位都必须用 uid 而非 id**——
+   * 早期用 id 定位导致「融合奥义时同 id 手牌被批量误删」与「同名卡无法分别选中」两个 bug。
+   */
+  uid?: string;
   name: string;
   kind: CardKind;
   /** 术法卡才有五行；物理卡为 undefined */
@@ -168,6 +174,10 @@ export interface Card {
   shield?: number;
   /** 抽牌 */
   draw?: number;
+  /** 驱散自身全部负面状态（净心咒） */
+  cleanse?: boolean;
+  /** 获得「势」层数（体修核心资源；非体修架势下不生效） */
+  gainShi?: number;
   /** 获得炁 */
   gainYang?: number;
   gainYin?: number;
@@ -292,13 +302,11 @@ export interface LunarMonth {
   label: string;
   /** 全局效果描述 */
   desc: string;
-  /** 得令：全技能倍率加成 */
-  buffMul: number;
   /** 对本五行术法的增减 */
   wxBonus: Partial<Record<WuXing, number>>;
   /** 术法额外消耗（土旺滞气） */
   spellCostDelta: number;
-  /** 防御护盾加成 */
+  /** 防御 / 护盾加成（土旺月 1.3，引擎在 effectiveDefense 与护盾结算处读取） */
   defMul: number;
 }
 
