@@ -25,6 +25,7 @@ import {
   FLAW_COUNTER_THRESHOLD,
   FLAW_DURATION,
   HAND_LIMIT,
+  HITSTOP_WHEN_HURT_MS,
   PARALYZE_MISS_CAP,
   PARALYZE_MISS_PER_STACK,
   PARRY_COUNTER_MUL,
@@ -769,6 +770,8 @@ function applyDamageToPlayer(s: BattleState, amount: number): void {
 
   s.player.hp = Math.max(0, nextHp);
   addNumber(s, s.player.id, dmg, 'physical', false);
+  // 受击顿帧：此前只有「玩家打人」才有顿帧，挨打完全没有反馈
+  s.pendingHitstopMs = Math.max(s.pendingHitstopMs, HITSTOP_WHEN_HURT_MS);
 
   // 受击获得阴炁（卖血换蓝）
   s.yin = Math.min(s.yinCap, s.yin + 1);
@@ -824,6 +827,17 @@ function enemyAct(s: BattleState): BattleState {
   next.enemyActed = true;
 
   const actors = next.enemies.filter((e) => e.hp > 0);
+
+  /**
+   * 弹反额度：一次弹反只抵消**一记**攻击。
+   *
+   * 此前 `parryResult` 是全局单值且每只敌人都读它 —— camp_4 三只敌人一起出手时，
+   * 玩家点一次「格挡」会把三刀全部免疫（配合大雪节气的 forceParry 就是「无条件
+   * 无敌 + 满血通关」）。现改为一次性额度，抵消一记后其余攻击照常结算。
+   * 不可弹反的招式（parryable === false）不消耗额度，额度留给真正能弹的那一记。
+   */
+  let parryBudget = next.parryResult === 'none' ? 0 : 1;
+
   for (const e of actors) {
     if (hasStatus(e, 'freeze')) {
       pushLog(next, `${e.name} 被冻结，无法行动`);
@@ -901,10 +915,13 @@ function enemyAct(s: BattleState): BattleState {
       e.chargeStacks = 0;
     }
 
-    // 弹反：intent.parryable === false 的招式无视弹反结果（此前该字段从未被读取）
+    // 弹反：intent.parryable === false 的招式无视弹反结果
     const parryable = intent.parryable !== false;
     let dmg = raw;
-    if (parryable) {
+    let parried = false;
+    if (parryable && parryBudget > 0) {
+      parryBudget -= 1;
+      parried = true;
       if (next.parryResult === 'perfect') {
         dmg = 0;
       } else if (next.parryResult === 'early') {
@@ -914,7 +931,8 @@ function enemyAct(s: BattleState): BattleState {
 
     if (dmg > 0) {
       applyDamageToPlayer(next, dmg);
-      pushLog(next, `${e.name} 使用「${intent.label}」，造成 ${dmg} 点伤害`);
+      const suffix = parried && next.parryResult === 'early' ? '（已被格挡减免）' : '';
+      pushLog(next, `${e.name} 使用「${intent.label}」，造成 ${dmg} 点伤害${suffix}`);
       if (intent.inflict) {
         const ex = next.player.statuses.find((st) => st.id === intent.inflict!.id);
         if (ex) ex.stacks += intent.inflict.stacks;
@@ -1180,9 +1198,21 @@ export function battleReducer(state: BattleState, action: BattleAction): BattleS
       if (state.phase !== 'enemyTelegraph' || state.parried) return state;
       return doParry(state, action.elapsedMs);
 
-    case 'ENEMY_ACT':
+    case 'ENEMY_ACT': {
       if (state.phase !== 'enemyTelegraph') return state;
-      return startPlayerTurn(enemyAct(state));
+      const acted = enemyAct(state);
+      /**
+       * enemyAct 产生的伤害数字必须活过 startPlayerTurn。
+       *
+       * startPlayerTurn 会清空 pendingNumbers（为本回合腾出画面），但它把「敌方刚刚
+       * 打出的数字」也一并抹掉了 —— 玩家挨打后既看不到飘字、也看不到顿帧，
+       * 体感上就是「怪物没有攻击」。这里把敌方的数字取了回来重新挂上。
+       */
+      const enemyNumbers = acted.pendingNumbers;
+      const started = startPlayerTurn(acted);
+      started.pendingNumbers = enemyNumbers;
+      return started;
+    }
 
     case 'CONSUME_FX': {
       const next = clone(state);

@@ -291,3 +291,93 @@ describe('回归：功能牌融合不再产出「空白奥义牌」', () => {
     expect(ult.desc).not.toContain('无实效果');
   });
 });
+
+/**
+ * 历史缺陷：「怪物无法攻击 / 满血通关」。
+ *
+ * 根因是 `parryResult` 为全局单值，`enemyAct` 里每只敌人都读它 ——
+ * 多敌人同回合出手时，玩家点一次「格挡」会把**所有**攻击一并免疫。
+ * 叠加「大雪」节气的 forceParry（无视时机一律判定 perfect），就等于无条件无敌。
+ */
+describe('回归：一次弹反只抵消一记攻击', () => {
+  /** camp_4 = 春雷兽 + 冰魇 + 加班怨灵，三敌同场，最适合验证多目标弹反 */
+  const camp4 = (solarTermId: string) =>
+    createBattleState({
+      characterId: 'luqingya',
+      equipment: ['tangdao', 'lihuojing'],
+      campaignId: 'camp_4',
+      lunarMonthId: 'zi',
+      solarTermId,
+      seed: 999,
+    });
+
+  /** 打完一整轮敌方行动，返回本轮新增的日志 */
+  function runEnemyRound(s: BattleState, parryElapsedMs: number) {
+    const before = s.player.hp;
+    const logLen = s.log.length;
+    let n = battleReducer(s, { type: 'END_TURN' });
+    n = battleReducer(n, { type: 'PARRY', elapsedMs: parryElapsedMs });
+    n = battleReducer(n, { type: 'ENEMY_ACT' });
+    return { next: n, gained: n.log.slice(logLen), hpBefore: before };
+  }
+
+  it('大雪下连按 3 回合，仍有攻击照常命中（不再满血通关）', () => {
+    let s = camp4('daxue');
+    // 推进到「多只敌人同时攻击」的那一轮（春雷兽 雷震四方 + 加班怨灵 絮叨）
+    for (let r = 0; r < 3; r++) {
+      const { next } = runEnemyRound(s, 99999); // 大雪下时机随意都算 perfect
+      s = next;
+    }
+
+    expect(s.player.hp).toBeLessThan(s.player.maxHp);
+  });
+
+  it('单轮内「被完全弹反」的敌人不超过 1 个', () => {
+    let s = camp4('daxue');
+    let checked = false;
+
+    for (let r = 0; r < 4 && s.phase !== 'lost' && s.phase !== 'won'; r++) {
+      const { next, gained } = runEnemyRound(s, 99999);
+      s = next;
+
+      const fullyParried = gained.filter((l) => l.includes('被完全弹反')).length;
+      expect(fullyParried).toBeLessThanOrEqual(1);
+
+      // 至少找到一轮「多只敌人出手」的样本，确保这条断言有实际约束力
+      // 注意：出招的日志有两种落点 —— 命中写「使用「…」，造成…」，被弹反写「…被完全弹反」
+      const attackers = gained.filter((l) => l.includes('使用「') || l.includes('被完全弹反')).length;
+      if (attackers >= 2) checked = true;
+    }
+
+    expect(checked).toBe(true);
+  });
+
+  it('对照：不带强制弹反的节气，打歪时机照样全额挨打', () => {
+    let s = camp4('jingzhe');
+    const { next, hpBefore } = runEnemyRound(s, 99999); // 远超判定窗 → miss
+    expect(next.player.hp).toBeLessThan(hpBefore);
+  });
+});
+
+describe('回归：敌方攻击必须留下可见反馈（不再「怪物没攻击」）', () => {
+  it('ENEMY_ACT 后玩家的伤害数字与顿帧都还在', () => {
+    let s = createBattleState({
+      characterId: 'luqingya',
+      equipment: ['tangdao', 'lihuojing'],
+      campaignId: 'camp_1',
+      lunarMonthId: 'shen',
+      solarTermId: 'jingzhe',
+      seed: 12345,
+    });
+
+    s = battleReducer(s, { type: 'END_TURN' });
+    s = battleReducer(s, { type: 'ENEMY_ACT' });
+
+    // startPlayerTurn 曾把 pendingNumbers 整个清空，连敌方刚打出的数字一起抹掉
+    const playerHits = s.pendingNumbers.filter((n) => n.targetId === s.player.id && n.amount > 0);
+    expect(playerHits.length).toBeGreaterThan(0);
+
+    // 此前只有「玩家打人」才有顿帧，挨打完全没有打击感
+    expect(s.pendingHitstopMs).toBeGreaterThan(0);
+  });
+});

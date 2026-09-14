@@ -232,7 +232,7 @@ export const SOLAR_TERMS: SolarTerm[] = [
   },
   {
     id: 'daxue', name: '大雪', season: '冬', implemented: true, particle: 'snow',
-    desc: '积雪封路：所有「格挡」自动升级为「弹反」，无需卡时机。',
+    desc: '积雪封路：格挡无需卡时机，必定判定为弹反；但一次弹反只能抵挡一记攻击。',
     hooks: { forceParry: true },
   },
   {

@@ -249,6 +249,25 @@ button {
   animation: goldBreathe 3.2s ease-in-out infinite;
 }
 
+/* 主行动按钮可用时的呼吸提示：引导玩家注意到「现在可以操作」 */
+@keyframes ctaPulse {
+  0%, 100% { filter: brightness(1); transform: scale(1); }
+  50% { filter: brightness(1.14); transform: scale(1.022); }
+}
+
+/*
+  可合体目标的朱红脉动环。
+  与「选中」的静态金环形成对比：会动的 = 可以点它合体，不动的 = 就是它本身。
+*/
+@keyframes fuseRingPulse {
+  0%, 100% {
+    box-shadow: 0 0 0 2.5px rgba(255, 168, 140, 0.55), 0 0 16px rgba(194, 59, 34, 0.7), 0 8px 16px rgba(40, 26, 12, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 0 3px rgba(255, 205, 180, 1), 0 0 32px rgba(255, 106, 66, 1), 0 8px 16px rgba(40, 26, 12, 0.5);
+  }
+}
+
 /* 卡牌选中：放大弹出（替代原「四块砖」的沉重感） */
 @keyframes cardPop {
   0% { transform: translateY(0) scale(1); }

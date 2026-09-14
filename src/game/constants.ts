@@ -16,6 +16,12 @@ export const GUARD_SHIELD = 15;
 /** 前摇 + 判定窗总时长 */
 export const PARRY_TOTAL_MS = PARRY_TELEGRAPH_MS + PARRY_WINDOW_MS;
 
+/**
+ * 「挨打」顿帧时长（ms）。
+ * 玩家受击必须有打击感反馈，否则敌方回合看起来像「什么都没发生」。
+ */
+export const HITSTOP_WHEN_HURT_MS = 260;
+
 /* ============================== 结算常量 ============================== */
 
 /**

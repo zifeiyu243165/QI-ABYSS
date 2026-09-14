@@ -39,8 +39,9 @@ Desktop.ini
 *.tmp
 *.bak
 
-# 会话工作区产物（截图、临时预览等，非源码）
+# 会话工作区产物（截图、临时预览、无头浏览器配置等，非源码）
 .workbuddy/artifacts/screenshots
+.workbuddy/artifacts/chromeprof*
 
 # 开发会话私人笔记（含本机路径等环境信息，不对外）
 .workbuddy/memory

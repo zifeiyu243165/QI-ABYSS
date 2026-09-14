@@ -1,15 +1,21 @@
 /**
- * 战斗界面 · v2 汉唐明媚
+ * 战斗界面 · v3（对齐用户 13 条批注 + 参考图一/图二的收拢展开）
  *
- * 分区（390×844）：
- *   天时条 40 / 敌方区 260 / 架势条 40 / 我方面板 108 / 手牌区 216 / 操作栏 剩余
+ * 尺寸预算（390×844）：
+ *   天时条 36 / 敌方区 238 / 架势条 38 / 我方面板 104 / 手牌区 flex / 操作栏 auto
  *
- * v2 重构要点（对齐用户方案）：
- * - 手牌：宣纸米白底 + 中央五行大图标 + 横向重叠扇形，缩小高度，点击弹出放大
- * - 敌方：脚下八卦发光底盘，敌我分明；意图以「招式卡」呈现
- * - 血条/炁条：粗壮 + 流光；主角血条朱红渐变
- * - 按钮：朱红底金边；「阴阳逆转（调息）」替代「调息 2:1」
- * - 弹反判定：游标 CSS 动画驱动，点击用 performance.now() 计时
+ * v3 改动要点：
+ * 1. 敌方区改为「三行定高」结构：意图卡 48 + 立绘盒 116 + 信息板 66 = 230。
+ *    此前意图卡被挤出可视区（敌方区 260 装不下 意图卡 + 1.35×size 的立绘），
+ *    又因 zIndex 低于天时条而被整个盖住 —— 玩家根本看不到敌人要出什么招。
+ * 2. 敌人名字/血条移入半透明暗色信息板，立绘后加径向暗色压边，解决「美术复杂
+ *    导致文字辨识度低」；三个敌人的血条尺寸、字号、信息板高度全部统一。
+ * 3. 手牌按参考图重做：收拢态重度叠压只露左侧一条边（步进 32px，最右一张完整
+ *    可见）；选中后整手摊开、被选中的牌上浮放大。金框=可融合、红框=可组合，
+ *    并加外发光环，未参与组合的牌降透明以突出可选目标。
+ * 4. 战斗日志改为深色底板 + 高亮文字（此前浅底灰字，几乎看不清）。
+ * 5. 「结束回合」移到右下角并加二次确认；「阴阳逆转」移到左侧。
+ * 6. 中央教学文字收进「?」按钮，首回合后自动隐藏。
  */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
@@ -29,6 +35,24 @@ import type { FxHandle } from './fx/Effects';
 
 const BASE = import.meta.env.BASE_URL;
 
+/** 敌方区三段定高（意图卡 / 立绘盒 / 信息板）—— 三个敌人共用，保证横向对齐 */
+const INTENT_H = 48;
+const FIGBOX_H = 116;
+const INFO_H = 66;
+
+/** 手牌尺寸与收拢参数 */
+const CARD_W = 78;
+const CARD_H = 112;
+/** 收拢态每张牌露出的宽度（参考图一：只露左侧一条边） */
+const FOLD_STEP = 32;
+/** 上拖超过此距离 → 选中 */
+const SELECT_LIFT_PX = 46;
+/** 下拖超过此距离 → 取消选中 */
+const RELEASE_BACK_PX = 30;
+/** 指针位移超过此距离才算「拖动」而非「轻点」（此前是 4px，手指轻微抖动就被误判成拖动，
+ *  于是「轻点已选中的牌去合体」永远走不到合体分支，反而把选中取消了） */
+const MOVE_SLOP_PX = 12;
+
 interface Props {
   state: BattleState;
   dispatch: (a: BattleAction) => void;
@@ -46,6 +70,9 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
   const [hitstop, setHitstop] = useState(0);
   const [shake, setShake] = useState(0);
   const [hurt, setHurt] = useState(0);
+  const [warn, setWarn] = useState('');
+  const [showHint, setShowHint] = useState(true);
+  const [endArmed, setEndArmed] = useState(false);
   const fxConsumed = useRef<string>('');
 
   const aliveEnemies = state.enemies.filter((e) => e.hp > 0);
@@ -79,6 +106,25 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
     prevHpRef.current = state.player.hp;
   }, [state.player.hp]);
 
+  /* ---------- 提示语：首回合后自动收起 ---------- */
+  useEffect(() => {
+    if (state.turn > 1) setShowHint(false);
+  }, [state.turn]);
+
+  /* ---------- 警告提示自动消失 ---------- */
+  useEffect(() => {
+    if (!warn) return;
+    const t = window.setTimeout(() => setWarn(''), 1600);
+    return () => window.clearTimeout(t);
+  }, [warn]);
+
+  /* ---------- 「结束回合」二次确认自动解除 ---------- */
+  useEffect(() => {
+    if (!endArmed) return;
+    const t = window.setTimeout(() => setEndArmed(false), 2600);
+    return () => window.clearTimeout(t);
+  }, [endArmed]);
+
   /* ---------- 敌方前摇：CSS 动画驱动 ---------- */
   const telegraphStartRef = useRef(0);
   const actDispatched = useRef(false);
@@ -110,16 +156,14 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
     dispatch({ type: 'PARRY', elapsedMs: performance.now() - telegraphStartRef.current });
   }, [state.parried, state.phase, dispatch]);
 
-  /* ---------- 手牌：斗地主式扇形 + 拖拽选中 ---------- */
-  /** 上拖超过此距离 → 进入选中态 */
-  const SELECT_LIFT_PX = 56;
-  /** 回落在此范围内 → 退出选中态 */
-  const RELEASE_BACK_PX = 24;
-
+  /* ---------- 手牌：收拢/展开 + 选中 + 融合 ---------- */
   const dragRef = useRef<{ uid: string; startY: number; startX: number; moved: boolean } | null>(null);
-  const [drag, setDrag] = useState<{ uid: string; dy: number; mode: 'press' | 'select' } | null>(null);
+  const [drag, setDrag] = useState<{ uid: string; dy: number } | null>(null);
 
-  /** 可融合的牌（未选中任何牌时用金色外框标出） */
+  /** 手牌是否处于展开态（有选中牌即展开） */
+  const handExpanded = selectedCards.length > 0;
+
+  /** 可融合的牌（未选中任何牌时用金框标出） */
   const fusibleUids = useMemo(() => {
     const set = new Set<string>();
     const hand = state.hand;
@@ -134,7 +178,7 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
     return set;
   }, [state.hand]);
 
-  /** 选中一张牌后，能与它组合的牌（用红色外框标出） */
+  /** 选中一张牌后，能与它组合的牌（红框） */
   const partnerUids = useMemo(() => {
     if (selectedCards.length !== 1) return new Set<string>();
     const a = state.hand.find((c) => (c.uid ?? c.id) === selectedCards[0]);
@@ -144,26 +188,67 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
     );
   }, [selectedCards, state.hand]);
 
+  /** 融合两张牌；返回是否成功 */
+  const tryFuse = useCallback(
+    (uidA: string, uidB: string) => {
+      const a = state.hand.find((c) => (c.uid ?? c.id) === uidA);
+      const b = state.hand.find((c) => (c.uid ?? c.id) === uidB);
+      if (!a || !b) return false;
+      if (!canFuse(a, b)) return false;
+      dispatch({ type: 'FUSE', cardAId: uidA, cardBId: uidB, targetId: targetId ?? undefined });
+      setSelectedCards([]);
+      return true;
+    },
+    [state.hand, dispatch, targetId],
+  );
+
+  /**
+   * 选中一张牌的**唯一入口**（轻点、上拖都走这里）。
+   *
+   * 三种结果：
+   * 1. 点的是已选中的牌 → 取消选中（收回手牌）
+   * 2. 已有一张选中牌且本张可与它融合 → 立刻合体
+   * 3. 其余情况 → 改选本张
+   */
+  const pickCard = useCallback(
+    (uid: string) => {
+      const card = state.hand.find((c) => (c.uid ?? c.id) === uid);
+      if (!card) return;
+
+      if (selectedCards.includes(uid)) {
+        setSelectedCards((prev) => prev.filter((x) => x !== uid));
+        return;
+      }
+
+      if (selectedCards.length === 1) {
+        const cur = selectedCards[0]!;
+        if (tryFuse(cur, uid)) return;
+        const a = state.hand.find((c) => (c.uid ?? c.id) === cur);
+        // 不可组合时不能「点了没反应」——明确告知原因，再改选本张
+        if (a) setWarn(`「${a.name}」×「${card.name}」不同系，无法合体`);
+        setSelectedCards([uid]);
+        return;
+      }
+
+      setSelectedCards([uid]);
+    },
+    [state.hand, selectedCards, tryFuse],
+  );
+
   const handleCardPointerDown = useCallback((e: React.PointerEvent<HTMLDivElement>, card: Card) => {
     const uid = card.uid ?? card.id;
     e.currentTarget.setPointerCapture(e.pointerId);
     dragRef.current = { uid, startY: e.clientY, startX: e.clientX, moved: false };
-    setDrag({ uid, dy: 0, mode: 'press' });
+    setDrag({ uid, dy: 0 });
   }, []);
 
-  const handleCardPointerMove = useCallback(
-    (e: React.PointerEvent<HTMLDivElement>) => {
-      const d = dragRef.current;
-      if (!d) return;
-      const dy = e.clientY - d.startY;
-      if (Math.abs(dy) > 4 || Math.abs(e.clientX - d.startX) > 4) d.moved = true;
-      const held = selectedCards.includes(d.uid);
-      const mode: 'press' | 'select' =
-        dy < -SELECT_LIFT_PX ? 'select' : held && dy < -RELEASE_BACK_PX ? 'select' : 'press';
-      setDrag({ uid: d.uid, dy, mode });
-    },
-    [selectedCards],
-  );
+  const handleCardPointerMove = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    const d = dragRef.current;
+    if (!d) return;
+    const dy = e.clientY - d.startY;
+    if (Math.abs(dy) > MOVE_SLOP_PX || Math.abs(e.clientX - d.startX) > MOVE_SLOP_PX) d.moved = true;
+    setDrag({ uid: d.uid, dy });
+  }, []);
 
   const handleCardPointerUp = useCallback(
     (e: React.PointerEvent<HTMLDivElement>) => {
@@ -173,41 +258,23 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
       if (!d) return;
 
       const dy = e.clientY - d.startY;
-      const held = selectedCards.includes(d.uid);
-      const card = state.hand.find((c) => (c.uid ?? c.id) === d.uid);
-      const fuseWith = (target: Card) => {
-        const a = state.hand.find((c) => (c.uid ?? c.id) === selectedCards[0]);
-        if (!a) return false;
-        dispatch({
-          type: 'FUSE',
-          cardAId: a.uid ?? a.id,
-          cardBId: target.uid ?? target.id,
-          targetId: targetId ?? undefined,
-        });
-        setSelectedCards([]);
-        return true;
-      };
 
-      // 轻点（未拖动）：已有选中牌且本张可与之组合 → 直接合体；否则仅作「抽出预览」，回位不选中
+      // 轻点（未拖动）→ 选中 / 取消 / 合体
       if (!d.moved) {
-        if (selectedCards.length === 1 && card) fuseWith(card);
+        pickCard(d.uid);
         return;
       }
-
-      // 上拖 → 进入选中（若能组合则直接合体）
+      // 上拖 → 选中
       if (dy < -SELECT_LIFT_PX) {
-        if (held) return;
-        if (selectedCards.length === 1 && card && fuseWith(card)) return;
-        setSelectedCards([d.uid]);
+        pickCard(d.uid);
         return;
       }
-
-      // 下拖 → 退出选中，回归手牌
-      if (held && dy > -RELEASE_BACK_PX) {
+      // 下拖 → 归位（取消选中）
+      if (dy > RELEASE_BACK_PX && selectedCards.includes(d.uid)) {
         setSelectedCards((prev) => prev.filter((x) => x !== d.uid));
       }
     },
-    [selectedCards, state.hand, dispatch, targetId],
+    [pickCard, selectedCards],
   );
 
   const playSelected = useCallback(() => {
@@ -217,7 +284,7 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
     setSelectedCards([]);
   }, [selectedCards, dispatch, targetId]);
 
-  /** 兜底按钮：选中一张后，若有可组合的牌则合并 */
+  /** 兜底：选中一张后，若有可组合的牌则合体 */
   const fuseHint = useMemo(() => {
     if (selectedCards.length !== 1) return null;
     const a = state.hand.find((c) => (c.uid ?? c.id) === selectedCards[0]);
@@ -232,10 +299,15 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
   /** 当前架势的「阴阳逆转」兑换比（体修/法修为 2:1，散修为 1:1） */
   const regRatio = STANCES.find((s) => s.id === state.stance)?.substituteRatio ?? 2;
 
+  const selectedCard =
+    selectedCards.length === 1 ? state.hand.find((c) => (c.uid ?? c.id) === selectedCards[0]) : undefined;
+  const canPlaySelected = selectedCard ? canPlayCard(state, selectedCard) : false;
+
   /** 引擎在 enemyAct 用 (turn-1) 取意图，UI 展示必须与之一致 */
   const intentOf = (intents: { type: string; label: string }[], turn: number) =>
     intents[(turn - 1) % intents.length];
 
+  /* ============================== 渲染 ============================== */
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%', display: 'flex', flexDirection: 'column' }}>
       {/*
@@ -251,13 +323,13 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
           backgroundImage: `url(${BASE}art/bg_战场.png)`,
           backgroundSize: 'cover',
           backgroundPosition: 'center',
-          filter: 'saturate(0.94) brightness(1.02)',
+          filter: 'saturate(0.9) brightness(0.98)',
           opacity: 0.96,
           zIndex: 0,
           pointerEvents: 'none',
         }}
       />
-      {/* 霞光罩层：让整体色温偏暖 */}
+      {/* 明暗罩：上方压暗提高敌人区文字对比，下方提亮让手牌区透气 */}
       <div
         style={{
           position: 'absolute',
@@ -265,7 +337,7 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
           zIndex: 1,
           pointerEvents: 'none',
           background:
-            'linear-gradient(180deg, rgba(243,217,164,0.28) 0%, rgba(223,234,242,0.14) 42%, rgba(251,247,236,0.5) 100%)',
+            'linear-gradient(180deg, rgba(28,20,12,0.44) 0%, rgba(60,42,24,0.18) 30%, rgba(247,242,228,0.08) 62%, rgba(251,247,236,0.32) 100%)',
         }}
       />
 
@@ -286,72 +358,100 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
       {/* ============ 天时条 ============ */}
       <div
         style={{
-          height: 40,
-          flex: '0 0 40px',
+          height: 36,
+          flex: '0 0 36px',
           display: 'flex',
           alignItems: 'center',
           gap: 8,
-          padding: '0 12px',
-          background: 'linear-gradient(180deg, rgba(138,90,52,0.92), rgba(138,90,52,0.72))',
+          padding: '0 10px',
+          background: 'linear-gradient(180deg, rgba(72,45,24,0.96), rgba(58,36,19,0.92))',
           borderBottom: '1.5px solid var(--color-miaojin)',
           fontSize: 11,
           zIndex: 20,
+          boxShadow: '0 2px 8px rgba(20,12,6,0.5)',
         }}
       >
         <Tip
           text={`月令·${month?.label ?? state.lunarMonthId}\n${month?.desc ?? ''}\n${(month?.defMul ?? 1) > 1 ? '本月防御倍率 ×' + month?.defMul : '本月防御无额外加成'}`}
           placement="bottom"
         >
-          <span style={{ color: 'var(--color-miaojin-light)', fontFamily: 'var(--font-brush)' }}>
+          <span
+            style={{
+              color: 'var(--color-miaojin-light)',
+              fontFamily: 'var(--font-brush)',
+              textShadow: '0 1px 3px rgba(0,0,0,0.85)',
+            }}
+          >
             {month?.label ?? state.lunarMonthId}
           </span>
         </Tip>
-        <span style={{ color: 'rgba(251,247,236,0.45)' }}>│</span>
+        <span style={{ color: 'rgba(236,203,122,0.5)' }}>│</span>
         <Tip
           text={`节气·${term?.name ?? state.solarTermId}（${term?.season ?? ''}）\n${term?.desc ?? ''}\n${term?.implemented ? '本节气效果已实装，会在符合条件时自动触发。' : '本节气为留位数据，尚未实装效果。'}`}
           placement="bottom"
         >
-          <span style={{ color: 'var(--color-xuanzhi-warm)', fontFamily: 'var(--font-brush)' }}>
+          <span
+            style={{
+              color: 'var(--color-miaojin-light)',
+              fontFamily: 'var(--font-brush)',
+              textShadow: '0 1px 3px rgba(0,0,0,0.85)',
+            }}
+          >
             炁候·{term?.name ?? state.solarTermId}
           </span>
         </Tip>
-        <Tip
-          text={`第 ${state.turn} 回合\n你出牌或结束回合 → 敌方行动 → 进入下一回合。\n每回合抽牌并回炁。`}
-          placement="bottom"
-          style={{ marginLeft: 'auto' }}
-        >
-          <span
-            style={{
-              color: 'var(--color-xuanzhi-warm)',
-              fontVariantNumeric: 'tabular-nums',
-            }}
+
+        <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
+          <Tip
+            text={`第 ${state.turn} 回合\n你出牌或结束回合 → 敌方行动 → 进入下一回合。\n每回合抽牌并回炁。`}
+            placement="bottom"
           >
-            第 {state.turn} 回合
-          </span>
-        </Tip>
-        {onExit && (
-          <Tip text="撤退\n退出当前战斗，返回主界面（本局进度不保留）。" placement="bottom">
-            <button onClick={onExit} style={{ color: 'rgba(251,247,236,0.75)', fontSize: 11 }}>
-              撤退
-            </button>
+            <span
+              style={{
+                color: 'var(--color-miaojin-light)',
+                fontVariantNumeric: 'tabular-nums',
+                textShadow: '0 1px 3px rgba(0,0,0,0.85)',
+              }}
+            >
+              第 {state.turn} 回合
+            </span>
           </Tip>
-        )}
+          {onExit && (
+            <Tip text="撤退\n退出当前战斗，返回主界面（本局进度不保留）。" placement="bottom">
+              <button
+                onClick={onExit}
+                aria-label="撤退"
+                style={{
+                  // 刻意弱化：避免和「结束回合」抢注意力
+                  color: 'rgba(236,203,122,0.55)',
+                  fontSize: 10,
+                  padding: '1px 5px',
+                  borderRadius: 3,
+                  border: '1px solid rgba(236,203,122,0.26)',
+                  background: 'transparent',
+                }}
+              >
+                ✕ 撤退
+              </button>
+            </Tip>
+          )}
+        </div>
       </div>
 
-      {/* ============ 敌方区 ============ */}
+      {/* ============ 敌方区：意图卡 / 立绘 / 信息板 三段定高 ============ */}
       <div
         key={`enemy-${shake}`}
         className={shake > 0 && state.pendingNumbers.some((n) => n.targetId !== 'player') ? 'shake' : undefined}
         style={{
-          height: 260,
-          flex: '0 0 260px',
+          height: 238,
+          flex: '0 0 238px',
           position: 'relative',
           display: 'flex',
-          alignItems: 'flex-end',
+          alignItems: 'flex-start',
           justifyContent: 'center',
-          gap: 10,
-          paddingBottom: 10,
-          zIndex: 10,
+          gap: 6,
+          paddingTop: 6,
+          zIndex: 25,
         }}
       >
         {state.enemies.map((e) => {
@@ -359,158 +459,115 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
           const hasFlaw = e.statuses.some((s) => s.id === 'flaw');
           const isTarget = e.id === targetId && !dead;
           const intent = intentOf(e.intents, state.turn);
-          const willAttack = isTelegraph && (intent?.type === 'attack' || intent?.type === 'aoe');
+          const willAttack = isTelegraph && (intent?.type === 'attack' || intent?.type === 'aoe') && !dead;
           const grade = (intent as { grade?: string })?.grade ?? 'base';
+
+          const colW = e.isBoss ? 126 : 112;
+          const figH = e.isBoss ? 112 : 90;
 
           return (
             <div
               key={e.id}
               onClick={() => !dead && setSelectedTarget(e.id)}
               style={{
+                width: colW,
                 display: 'flex',
                 flexDirection: 'column',
                 alignItems: 'center',
-                gap: 3,
-                opacity: dead ? 0.24 : 1,
-                filter: dead ? 'grayscale(1)' : undefined,
-                transition: 'opacity 300ms',
+                cursor: dead ? 'default' : 'pointer',
                 position: 'relative',
               }}
             >
-              {/* ---- 招式卡：敌方意图以卡牌形式公示 ---- */}
-              {!dead && (
-                <IntentCard
-                  label={intent?.label ?? '——'}
-                  grade={grade}
-                  active={isTelegraph}
-                  willAttack={willAttack}
-                  note={(intent as { note?: string })?.note}
-                  shi={e.shi}
-                  shiCap={e.shiCap}
-                />
-              )}
+              {/* ① 意图卡：定高，始终占位，保证三列横向对齐 */}
+              <div style={{ height: INTENT_H, width: '100%', display: 'flex', alignItems: 'center' }}>
+                {!dead && (
+                  <IntentCard
+                    label={intent?.label ?? '——'}
+                    grade={grade}
+                    active={isTelegraph}
+                    willAttack={willAttack}
+                    note={(intent as { note?: string })?.note}
+                    shi={e.shi}
+                    shiCap={e.shiCap}
+                  />
+                )}
+              </div>
 
+              {/* ② 立绘盒：定高 + 径向暗色压边 */}
               <div
                 style={{
                   position: 'relative',
-                  borderRadius: 10,
-                  padding: 2,
-                  animation: hasFlaw ? 'flawPulse 1.4s ease-in-out infinite' : undefined,
-                  outline: isTarget ? '2px solid rgba(212,168,67,0.75)' : 'none',
-                  outlineOffset: 2,
-                  width: e.isBoss ? 150 : 112,
-                  height: e.isBoss ? 168 : 132,
+                  width: '100%',
+                  height: FIGBOX_H,
                   display: 'flex',
                   alignItems: 'flex-end',
                   justifyContent: 'center',
                 }}
               >
-                {/* 八卦发光底盘：解决敌我融于背景的问题 */}
-                <BaguaPlatform size={e.isBoss ? 150 : 116} wuxing={e.wuxing} />
+                <div
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    borderRadius: 10,
+                    background:
+                      'radial-gradient(ellipse at 50% 58%, rgba(24,16,9,0.5), rgba(24,16,9,0.12) 62%, transparent 78%)',
+                    animation: hasFlaw ? 'flawPulse 1.4s ease-in-out infinite' : undefined,
+                    boxShadow: isTarget ? 'inset 0 0 0 2px rgba(212,168,67,0.85)' : 'none',
+                    pointerEvents: 'none',
+                  }}
+                />
+                <BaguaPlatform size={e.isBoss ? 112 : 94} wuxing={e.wuxing} />
 
                 <EnemyFigure
                   enemyId={e.id.replace('enemy_', '')}
                   shape={e.shape}
                   wuxing={e.wuxing}
-                  size={e.isBoss ? 150 : 112}
+                  size={figH / 1.35}
                   dim={dead}
                   charging={willAttack}
                 />
 
-                {hasFlaw && (
-                  <Tip text={STATUS_TIP['flaw'] ?? '破绽'} placement="top">
-                    <div
-                      style={{
-                        position: 'absolute',
-                        top: -4,
-                        right: -4,
-                        fontSize: 10,
-                        background: 'linear-gradient(180deg, var(--color-miaojin-light), var(--color-miaojin))',
-                        color: 'var(--color-card-title)',
-                        padding: '1px 5px',
-                        borderRadius: 3,
-                        fontWeight: 700,
-                        border: '1px solid var(--color-xuanzhi-warm)',
-                      }}
-                    >
-                      破绽
-                    </div>
-                  </Tip>
-                )}
-              </div>
-
-              <Tip
-                text={`${e.name}\n五行·${e.wuxing ? (WUXING_TIP[e.wuxing]?.split('\n')[0] ?? e.wuxing) : '无属'}${e.isBoss ? '\n首领：气血更厚，且拥有杀招。' : ''}${e.chargeStacks > 0 ? `\n蓄势 ×${e.chargeStacks}：伤害随蓄势层数放大，可被相克术法打断。` : ''}\n点击立绘可切换攻击目标。`}
-                placement="top"
-              >
-                <div style={{ fontSize: 11, color: 'var(--color-card-text)', fontFamily: 'var(--font-brush)' }}>
-                  {e.name}
-                  {e.isBoss && <span style={{ color: 'var(--color-zhuhong)' }}> ·首领</span>}
-                  {e.chargeStacks > 0 && (
-                    <span style={{ color: 'var(--color-zhuhong)', fontWeight: 700 }}> 蓄势×{e.chargeStacks}</span>
-                  )}
-                </div>
-              </Tip>
-
-              {/* 敌方血条：亮红 + 金边 */}
-              <Tip text={`敌方气血 ${e.hp}/${e.maxHp}\n归零即被击败。${e.shield > 0 ? `\n护盾 ${e.shield} 点：优先于气血被扣减。` : ''}`} placement="top">
-                <div
-                  style={{
-                    width: 88,
-                    height: 9,
-                    background: 'rgba(90,60,30,0.35)',
-                    borderRadius: 5,
-                    border: '1px solid var(--color-miaojin)',
-                    overflow: 'hidden',
-                  }}
-                >
+                {isTarget && (
                   <div
                     style={{
-                      width: `${(e.hp / e.maxHp) * 100}%`,
-                      height: '100%',
-                      background: 'linear-gradient(90deg, #e8604a, var(--color-enemy-hp))',
-                      borderRadius: 4,
-                      transition: 'width 260ms',
-                      boxShadow: '0 0 6px rgba(217,74,61,0.7)',
+                      position: 'absolute',
+                      top: 0,
+                      left: '50%',
+                      transform: 'translateX(-50%)',
+                      fontSize: 9,
+                      padding: '0 5px',
+                      borderRadius: 3,
+                      background: 'var(--color-miaojin)',
+                      color: 'var(--color-card-title)',
+                      fontWeight: 700,
+                      whiteSpace: 'nowrap',
                     }}
-                  />
-                </div>
-              </Tip>
-              <div style={{ fontSize: 10, color: 'var(--color-card-text-sub)', fontVariantNumeric: 'tabular-nums' }}>
-                {e.hp}/{e.maxHp}
-                {e.shield > 0 && (
-                  <Tip text={`护盾 ${e.shield} 点\n优先于气血被扣减，本回合结束不会结转。`} placement="top">
-                    <span style={{ color: 'var(--color-songhua)', fontWeight: 700 }}> ·盾{e.shield}</span>
-                  </Tip>
+                  >
+                    ▼ 目标
+                  </div>
+                )}
+                {hasFlaw && (
+                  <div
+                    style={{
+                      position: 'absolute',
+                      top: 0,
+                      right: 0,
+                      fontSize: 9,
+                      background: 'linear-gradient(180deg, var(--color-miaojin-light), var(--color-miaojin))',
+                      color: 'var(--color-card-title)',
+                      padding: '0 4px',
+                      borderRadius: 3,
+                      fontWeight: 700,
+                      border: '1px solid var(--color-xuanzhi-warm)',
+                    }}
+                  >
+                    破绽
+                  </div>
                 )}
               </div>
 
-              {/* 状态：太极/火焰/冰裂纹样，替代方块图标 */}
-              {e.statuses.length > 0 && (
-                <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', justifyContent: 'center' }}>
-                  {e.statuses.map((s, i) => (
-                    <Tip key={i} text={STATUS_TIP[s.id] ?? `${STATUS_CN[s.id] ?? s.id}`} placement="top">
-                      <span
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          gap: 2,
-                          fontSize: 9,
-                          padding: '1px 4px 1px 2px',
-                          borderRadius: 3,
-                          background: 'rgba(251,247,236,0.92)',
-                          border: '1px solid rgba(212,168,67,0.7)',
-                          color: 'var(--color-card-text)',
-                        }}
-                      >
-                        <StatusGlyph id={s.id} size={12} />
-                        {STATUS_CN[s.id] ?? s.id}
-                        {s.stacks > 1 ? `×${s.stacks}` : ''}
-                      </span>
-                    </Tip>
-                  ))}
-                </div>
-              )}
+              {/* ③ 信息板：统一规格的暗色底板 */}
+              <EnemyInfoPanel enemy={e} dead={dead} />
             </div>
           );
         })}
@@ -519,8 +576,8 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
       {/* ============ 架势条 ============ */}
       <div
         style={{
-          height: 40,
-          flex: '0 0 40px',
+          height: 38,
+          flex: '0 0 38px',
           display: 'flex',
           alignItems: 'center',
           gap: 6,
@@ -549,13 +606,14 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
                   fontSize: 10.5,
                   fontFamily: 'var(--font-brush)',
                   letterSpacing: 1,
-                  border: `1.5px solid ${active ? 'var(--color-miaojin)' : 'rgba(138,90,52,0.35)'}`,
+                  border: `1.5px solid ${active ? 'var(--color-miaojin-light)' : 'rgba(212,168,67,0.45)'}`,
                   background: active
                     ? 'linear-gradient(180deg, #d8543a, var(--color-zhuhong))'
-                    : 'linear-gradient(180deg, rgba(251,247,236,0.9), rgba(236,217,171,0.82))',
+                    : 'linear-gradient(180deg, rgba(251,247,236,0.92), rgba(236,217,171,0.85))',
                   color: active ? 'var(--color-xuanzhi-warm)' : 'var(--color-card-text-sub)',
                   opacity: disabled ? 0.4 : 1,
                   textShadow: active ? '0 1px 2px rgba(80,20,10,0.5)' : 'none',
+                  boxShadow: active ? '0 0 10px rgba(212,168,67,0.5)' : 'none',
                 }}
               >
                 {s.name.split('·')[0]}
@@ -568,17 +626,17 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
       {/* ============ 我方面板 ============ */}
       <div
         style={{
-          height: 108,
-          flex: '0 0 108px',
+          height: 104,
+          flex: '0 0 104px',
           display: 'flex',
           alignItems: 'center',
-          gap: 10,
-          padding: '0 12px',
+          gap: 8,
+          padding: '0 10px',
           margin: '0 8px',
           borderRadius: 8,
-          background: 'linear-gradient(160deg, rgba(251,247,236,0.94), rgba(236,217,171,0.86))',
+          background: 'linear-gradient(160deg, rgba(251,247,236,0.96), rgba(236,217,171,0.9))',
           border: '1.5px solid var(--color-miaojin)',
-          boxShadow: '0 3px 12px rgba(120,90,40,0.25), inset 0 1px 0 rgba(255,246,220,0.8)',
+          boxShadow: '0 3px 12px rgba(120,90,40,0.3), inset 0 1px 0 rgba(255,246,220,0.85)',
           zIndex: 10,
         }}
       >
@@ -588,24 +646,30 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
           trim={char?.palette.trim ?? '#ca6924'}
           hair={char?.palette.hair ?? '#1a1f2b'}
           weapon={state.equipment.some((id) => id && EQUIPMENT_MAP[id]?.kind === 'blade') ? 'blade' : 'artifact'}
-          size={96}
+          size={84}
           flat
         />
 
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 5, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11 }}>
-            <Tip text={`角色：${char?.name}\n${char?.rizhu ?? ''}日主，五行属${WUXING_TIP[char?.wuxing ?? '']?.split(' ')[0] ?? char?.wuxing ?? ''}。`} placement="top">
-              <span style={{ fontFamily: 'var(--font-brush)', color: 'var(--color-card-title)', fontSize: 13 }}>
-                {char?.name}
-              </span>
-            </Tip>
+        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 4, minWidth: 0 }}>
+          {/* 名字 + 命格标签压成同一行，字号下调 */}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 4, minWidth: 0 }}>
+            <span
+              style={{
+                fontFamily: 'var(--font-brush)',
+                color: 'var(--color-card-title)',
+                fontSize: 13,
+                flex: '0 0 auto',
+              }}
+            >
+              {char?.name}
+            </span>
             <Tip text={`日主·${char?.rizhu}\n该角色的本命五行，决定其感受节气与月令加成的方式。`} placement="top">
               <span
                 style={{
-                  fontSize: 9,
+                  fontSize: 8.5,
                   background: 'var(--color-zhuhong)',
                   color: 'var(--color-xuanzhi-warm)',
-                  padding: '1px 4px',
+                  padding: '0 3px',
                   borderRadius: 2,
                 }}
               >
@@ -622,12 +686,12 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
                 >
                   <span
                     style={{
-                      fontSize: 9,
-                      padding: '1px 4px',
+                      fontSize: 8.5,
+                      padding: '0 3px',
                       borderRadius: 2,
-                      background: 'rgba(11,46,89,0.82)',
+                      background: 'rgba(11,46,89,0.8)',
                       color: 'var(--color-yuebai)',
-                      opacity: info && !info.implemented ? 0.6 : 1,
+                      opacity: info && !info.implemented ? 0.55 : 1,
                     }}
                   >
                     {info?.name ?? s}
@@ -647,39 +711,40 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
               value={state.player.hp}
               cap={state.player.maxHp}
               color="linear-gradient(90deg, var(--color-hp-grad-a), var(--color-hp-grad-b))"
-              height={13}
+              height={12}
             />
           </Tip>
 
-          <div style={{ display: 'flex', gap: 8 }}>
-            <Tip
-              text={`阳炁 ${state.yang}/${state.yangCap}\n出物理牌消耗。攻击命中、调息可积累，是「性命双修」中炼「命」的一面。`}
-              placement="top"
-              style={{ flex: 1, display: 'block' }}
-            >
-              <FlowBar label="阳" value={state.yang} cap={state.yangCap} color="var(--color-hupo)" height={11} segments />
-            </Tip>
-            <Tip
-              text={`阴炁 ${state.yin}/${state.yinCap}\n出术法牌消耗。受击与术法相生可积累，是炼「性」的一面。`}
-              placement="top"
-              style={{ flex: 1, display: 'block' }}
-            >
-              <FlowBar label="阴" value={state.yin} cap={state.yinCap} color="var(--color-shishui)" height={11} segments />
-            </Tip>
+          {/* 阴阳资源：大号数字 + 分段条 + 发光，与血条在视觉上区分开 */}
+          <div style={{ display: 'flex', gap: 10 }}>
+            <QiResource
+              label="阳"
+              value={state.yang}
+              cap={state.yangCap}
+              color="var(--color-hupo)"
+              tip={`阳炁 ${state.yang}/${state.yangCap}\n出物理牌消耗。攻击命中、调息可积累，是「性命双修」中炼「命」的一面。`}
+            />
+            <QiResource
+              label="阴"
+              value={state.yin}
+              cap={state.yinCap}
+              color="var(--color-shishui)"
+              tip={`阴炁 ${state.yin}/${state.yinCap}\n出术法牌消耗。受击与术法相生可积累，是炼「性」的一面。`}
+            />
           </div>
         </div>
 
-        <div style={{ width: 64, textAlign: 'center', fontSize: 10, flex: '0 0 auto' }}>
+        <div style={{ width: 60, textAlign: 'center', fontSize: 10, flex: '0 0 auto' }}>
           {state.stance === 'tixiu' && (
             <Tip
               text={`势 ${state.shi}／${SHI_CAP}\n体修专属资源：每打出一张物理牌积攒 1 层。\n满 ${SHI_CAP} 层解锁「破军」，下张物理牌造成 攻击×层数 的真实伤害。`}
               placement="top"
             >
               <div>
-                <div style={{ color: 'var(--color-hupo)', fontSize: 17, fontFamily: 'var(--font-brush)' }}>
+                <div style={{ color: 'var(--color-hupo)', fontSize: 18, fontFamily: 'var(--font-brush)' }}>
                   {state.shi}
                 </div>
-                <div style={{ color: 'var(--color-card-text-sub)' }}>势／{SHI_CAP}</div>
+                <div style={{ color: 'var(--color-card-text-sub)', fontSize: 9 }}>势／{SHI_CAP}</div>
               </div>
             </Tip>
           )}
@@ -689,36 +754,39 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
               placement="top"
             >
               <div>
-                <div style={{ color: 'var(--color-zhuhong)', fontSize: 17, fontFamily: 'var(--font-brush)' }}>
+                <div style={{ color: 'var(--color-zhuhong)', fontSize: 18, fontFamily: 'var(--font-brush)' }}>
                   {Math.abs(state.yang - state.yin)}
                 </div>
-                <div style={{ color: 'var(--color-card-text-sub)' }}>阴阳差</div>
+                <div style={{ color: 'var(--color-card-text-sub)', fontSize: 9 }}>阴阳差</div>
               </div>
             </Tip>
           )}
           {state.stance === 'faxiu' && (
             <Tip
-              text={`五行轮转：${state.lastSpellWuxing ? '相生（已进入轮转）' : '起手（本回合尚未出术法）'}\n法修按五行相生顺序（木→火→土→金→水）连续出术法牌，每张费用减半且伤害递增 10%。\n相克可打断敌方蓄力并附加虚弱。`}
+              text={`五行轮转：${state.lastSpellWuxing ? '相生（已进入轮转）' : '起手（本回合尚未出术法）'}\n法修按五行相生顺序（木→火→土→金→水）连续出术法牌，每张费用减半且伤害递增 10%。`}
               placement="top"
             >
               <div>
                 <div style={{ color: 'var(--color-wx-shui)', fontSize: 14, fontFamily: 'var(--font-brush)' }}>
                   {state.lastSpellWuxing ? '相生' : '起手'}
                 </div>
-                <div style={{ color: 'var(--color-card-text-sub)' }}>五行</div>
+                <div style={{ color: 'var(--color-card-text-sub)', fontSize: 9 }}>五行</div>
               </div>
             </Tip>
           )}
           {bladeCount >= 2 && (
-            <Tip text={`纯阳开天 ${state.wushengStacks}/${WUSHENG_KAITIAN_STACKS}\n双持兵刃时积累的叠层，满层释放「纯阳开天」奥义。`} placement="top">
-              <div style={{ color: 'var(--color-card-title)', fontSize: 9, marginTop: 3 }}>
+            <Tip
+              text={`纯阳开天 ${state.wushengStacks}/${WUSHENG_KAITIAN_STACKS}\n双持兵刃时积累的叠层，满层释放「纯阳开天」奥义。`}
+              placement="top"
+            >
+              <div style={{ color: 'var(--color-card-title)', fontSize: 9, marginTop: 2 }}>
                 纯阳 {state.wushengStacks}/{WUSHENG_KAITIAN_STACKS}
               </div>
             </Tip>
           )}
           {combo && bladeCount === 1 && (
-            <Tip text={`连携技「${combo.skillName}」\n装备组合触发的被动：同时佩戴对应兵刃与法器时生效。`} placement="top">
-              <div style={{ color: 'var(--color-hupo)', fontSize: 9, marginTop: 3 }}>{combo.skillName}</div>
+            <Tip text={`连携技「${combo.skillName}」\n同时佩戴对应兵刃与法器时生效的被动。`} placement="top">
+              <div style={{ color: 'var(--color-hupo)', fontSize: 9, marginTop: 2 }}>{combo.skillName}</div>
             </Tip>
           )}
         </div>
@@ -727,26 +795,26 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
       {/* ============ 手牌区 / 弹反区 ============ */}
       <div
         style={{
-          height: 216,
-          flex: '0 0 216px',
+          flex: '1 1 auto',
+          minHeight: 0,
           position: 'relative',
-          padding: '10px 0 4px',
-          // 高于操作栏：卡片「抽出预览」上浮后会盖在按钮之上
+          padding: '6px 0 0',
+          // 高于操作栏：卡片上浮后会盖在按钮之上
           zIndex: 40,
         }}
       >
         {!isTelegraph ? (
           <>
-            {/* 横向重叠扇形手牌 */}
+            {/* 手牌扇形：收拢（重度叠压）/ 展开（摊开） */}
             <div
               style={{
                 display: 'flex',
                 justifyContent: 'center',
                 alignItems: 'flex-end',
-                height: 130,
-                paddingTop: 14,
-                // 必须 visible：卡片「抽出预览」会上浮 176px，被裁剪就看不见了。
-                // 手牌上限 8 张时扇形总宽 344px < 390，无需横向滚动。
+                height: '100%',
+                paddingTop: 34,
+                paddingBottom: 8,
+                // 必须 visible：选中的牌会上浮，被裁剪就看不见了
                 overflow: 'visible',
               }}
             >
@@ -756,29 +824,43 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
                 const uid = c.uid ?? c.id;
                 const sel = selectedCards.includes(uid);
                 const dragging = drag?.uid === uid;
-                const pressPreview = dragging && drag?.mode === 'press';
-                const selectPreview = dragging && drag?.mode === 'select';
                 const fusible = selectedCards.length === 0 && fusibleUids.has(uid);
                 const partner = partnerUids.has(uid);
+                /** 展开态下，既不选中也不可组合的牌降透明，让可选目标跳出来 */
+                const dimmed = handExpanded && !sel && !partner;
 
                 const n = state.hand.length;
-                // 重叠：牌多时只露出左侧边缘（斗地主式扇形）
-                const overlap = n <= 4 ? 6 : n <= 6 ? 26 : 40;
                 const mid = (n - 1) / 2;
-                const rot = (i - mid) * (n > 5 ? 2 : 3);
-                const lift = Math.abs(i - mid) * (n > 5 ? 1.5 : 3);
+                /** 均分步进：让 n 张牌正好铺满手牌区可用宽度（marginLeft 用负值抵消） */
+                const even = Math.floor((344 - CARD_W) / Math.max(1, n - 1));
+                /**
+                 * 收拢态：步进上限 FOLD_STEP(32)，重度叠压，每张只露左侧一条边。
+                 * 展开态：用均分步进尽量摊开。
+                 *
+                 * 【曾经的致命 Bug】展开态写成 `step = 0`，于是 overlap = CARD_W - 0 = 78，
+                 * marginLeft = -78 —— 每张牌往左挪满一整个身位，**所有手牌精确重叠在同一坐标**。
+                 * 选中第一张后，其余牌瞬间叠成一摞，第二张根本点不到 —— 这就是
+                 * 「很难同时选中两张卡牌 / 选中的牌触发不了融合」的真正原因。
+                 */
+                const step = handExpanded
+                  ? Math.max(20, Math.min(CARD_W + 6, even))
+                  : Math.max(16, Math.min(FOLD_STEP, even));
+                const overlap = Math.max(0, CARD_W - step);
+                // 扇形弧度：展开态角度更大
+                const rotMax = handExpanded ? 7 : 5;
+                const rot = n <= 1 ? 0 : ((i - mid) / Math.max(1, mid)) * rotMax;
+                const arc = handExpanded ? Math.abs(i - mid) * 3 : Math.abs(i - mid) * 1.2;
 
-                // 三种姿态：待机（扇形）/ 选中（上浮定住）/ 抽出预览（浮到屏幕中间放大）
-                let transform = `rotate(${rot}deg) translateY(${lift}px)`;
+                let transform = `rotate(${rot}deg) translateY(${arc}px)`;
                 let z = i;
-                if (sel || selectPreview) {
-                  transform = 'rotate(0deg) translateY(-92px) scale(1.08)';
-                  z = 120;
+                if (sel) {
+                  transform = 'rotate(0deg) translateY(-58px) scale(1.12)';
+                  z = 300;
+                } else if (partner) {
+                  transform = `rotate(${rot}deg) translateY(-22px) scale(1.06)`;
+                  z = 200 + i;
                 }
-                if (pressPreview) {
-                  transform = 'rotate(0deg) translateY(-176px) scale(1.36)';
-                  z = 200;
-                }
+                if (dragging) z = 400;
 
                 return (
                   <div
@@ -791,7 +873,11 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
                       flex: '0 0 auto',
                       marginLeft: i === 0 ? 0 : -overlap,
                       transform,
-                      transition: dragging ? 'none' : 'transform 180ms cubic-bezier(0.2, 0.9, 0.3, 1.1)',
+                      // margin-left 也要过渡：否则「收拢→摊开」时整排手牌会瞬移，
+                      // 手指下的牌突然换位，第二次点击自然点空。
+                      transition: dragging
+                        ? 'none'
+                        : 'transform 190ms cubic-bezier(0.2, 0.9, 0.3, 1.05), margin-left 190ms cubic-bezier(0.2, 0.9, 0.3, 1.05)',
                       zIndex: z,
                       position: 'relative',
                       touchAction: 'none',
@@ -802,88 +888,92 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
                       card={c}
                       cost={cost}
                       playable={playable}
-                      selected={sel || selectPreview}
+                      selected={sel}
                       fusible={fusible}
                       partner={partner}
+                      dimmed={dimmed}
                     />
                   </div>
                 );
               })}
               {state.hand.length === 0 && (
-                <div style={{ color: 'var(--color-card-text-sub)', fontSize: 12, padding: 12 }}>手牌已空</div>
+                <div
+                  style={{
+                    color: 'var(--color-card-text)',
+                    fontSize: 12,
+                    padding: 12,
+                    textShadow: '0 1px 3px rgba(0,0,0,0.6)',
+                  }}
+                >
+                  手牌已空
+                </div>
               )}
             </div>
 
+            {/* 教学提示：收进「?」，首回合后自动隐藏，不再挡住画面中心 */}
             <div
               style={{
                 position: 'absolute',
                 left: 10,
                 right: 10,
-                bottom: 4,
+                bottom: 2,
                 display: 'flex',
-                flexDirection: 'column',
-                gap: 5,
+                alignItems: 'center',
+                gap: 6,
+                fontSize: 9.5,
               }}
             >
-              <div style={{ textAlign: 'center', fontSize: 9.5, color: 'var(--color-card-text-sub)' }}>
-                按住看牌 · 上拖选中 · 下拖归位 · 点红框牌合体
-              </div>
-              <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <Tip
-                  text={'出牌\n选中一张（向上拖）后点此打出。\n物理牌耗阳炁，术法牌耗阴炁。'}
-                  placement="top"
-                  style={{ flex: 1 }}
+              <Tip
+                text={
+                  '操作提示\n· 轻点或上拖卡牌 = 选中，整排手牌会摊开\n· 再点一次 / 下拖 = 收回手牌\n· 牌左边缘的金条 = 手牌里有能跟它合体的牌\n· 选中后，脉动朱红环 = 点它即刻合体成奥义\n· 选好之后按下方「出牌」打出'
+                }
+                placement="top"
+              >
+                <button
+                  onClick={() => setShowHint((v) => !v)}
+                  aria-label="操作提示"
+                  style={{
+                    width: 18,
+                    height: 18,
+                    borderRadius: '50%',
+                    fontSize: 11,
+                    lineHeight: '15px',
+                    flex: '0 0 auto',
+                    background: 'rgba(38,29,18,0.85)',
+                    border: '1px solid var(--color-miaojin)',
+                    color: 'var(--color-miaojin-light)',
+                  }}
                 >
-                  <JadeButton
-                    onClick={playSelected}
-                    disabled={selectedCards.length !== 1}
-                    variant="primary"
-                    style={{ width: '100%' }}
-                  >
-                    出　牌
-                  </JadeButton>
-                </Tip>
-                <Tip
-                  text={'合并奥义\n两张同系牌（双物理 / 同五行术法）可合体：\n伤害倍率 ×1.5，且不额外消耗回合。\n金框=可融合，红框=能与当前选中牌组合。'}
-                  placement="top"
-                  style={{ flex: 1 }}
-                >
-                  <JadeButton
-                    onClick={() => {
-                      if (!fuseHint) return;
-                      const a = selectedCards[0];
-                      if (!a) return;
-                      dispatch({
-                        type: 'FUSE',
-                        cardAId: a,
-                        cardBId: fuseHint.uid ?? fuseHint.id,
-                        targetId: targetId ?? undefined,
-                      });
-                      setSelectedCards([]);
-                    }}
-                    disabled={!fuseHint}
-                    variant="gold"
-                    style={{ width: '100%' }}
-                  >
-                    合并奥义 ×1.5
-                  </JadeButton>
-                </Tip>
-              </div>
+                  ?
+                </button>
+              </Tip>
+              {showHint && (
+                <div style={{ color: 'var(--color-xuanzhi-warm)', textShadow: '0 1px 3px rgba(0,0,0,0.8)' }}>
+                  轻点或上拖卡牌选中 · 点红框牌合体
+                </div>
+              )}
+              {warn && (
+                <div style={{ color: 'var(--color-miaojin-light)', textShadow: '0 1px 3px rgba(0,0,0,0.8)' }}>
+                  {warn}
+                </div>
+              )}
             </div>
           </>
         ) : (
-          /* ---- 弹反面板 ---- */
+          /* 弹反面板 */
           <div
             style={{
               display: 'flex',
               flexDirection: 'column',
               alignItems: 'center',
-              gap: 10,
-              paddingTop: 4,
+              gap: 8,
+              paddingTop: 10,
             }}
           >
             <Tip
-              text={'弹反时序\n游标自左向右划过：\n· 红色区按下 = 普通格挡（减伤 60%）\n· 金色区按下 = 完美弹反（免疫该次攻击并追击）\n· 游标走完仍未按下 = 未格挡，全额受伤'}
+              text={
+                '弹反时序\n游标自左向右划过：\n· 红色区按下 = 普通格挡（减伤 60%）\n· 金色区按下 = 完美弹反（免疫这一记攻击并追击）\n· 一次弹反只能抵挡一记攻击，多只敌人同时出手时其余照常命中'
+              }
               placement="top"
               style={{ display: 'block', width: 334 }}
             >
@@ -951,7 +1041,9 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
             </Tip>
 
             <Tip
-              text={'格挡\n敌方出招前的瞬间点击：\n· 游标进入金色区点击 = 完美弹反\n· 红色区点击 = 普通格挡（减伤 60%）\n只需点击，无需拖动。'}
+              text={
+                '格挡\n敌方出招前的瞬间点击：\n· 游标进入金色区点击 = 完美弹反（免疫这一记）\n· 红色区点击 = 普通格挡（减伤 60%）\n注意：一次只能抵挡一记攻击。'
+              }
               placement="top"
               style={{ display: 'block', width: 334 }}
             >
@@ -960,10 +1052,10 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
                 onClick={handleParry}
                 style={{
                   width: 334,
-                  height: 112,
+                  height: 104,
                   borderRadius: 10,
                   fontFamily: 'var(--font-brush)',
-                  fontSize: 32,
+                  fontSize: 30,
                   letterSpacing: 10,
                   border: `2px solid ${inWindow && !state.parried ? 'var(--color-xuanzhi-warm)' : 'var(--color-miaojin)'}`,
                   background:
@@ -982,8 +1074,14 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
                 格　挡
               </button>
             </Tip>
-            <div style={{ fontSize: 11, color: 'var(--color-card-text-sub)' }}>
-              游标进入金色区按下 = 完美弹反（免疫 + 追击）· 红色区按下 = 普通格挡（减伤 60%）
+            <div
+              style={{
+                fontSize: 10.5,
+                color: 'var(--color-xuanzhi-warm)',
+                textShadow: '0 1px 3px rgba(0,0,0,0.8)',
+              }}
+            >
+              金色区按下 = 完美弹反 · 红色区按下 = 减伤 60% · 一次只挡一记
             </div>
           </div>
         )}
@@ -992,16 +1090,77 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
       {/* ============ 操作栏 ============ */}
       <div
         style={{
-          flex: 1,
+          flex: '0 0 auto',
           display: 'flex',
           flexDirection: 'column',
-          padding: '4px 10px 8px',
+          padding: '0 10px 8px',
           gap: 6,
-          minHeight: 0,
           zIndex: 10,
         }}
       >
+        {/* 主操作：出牌 / 合并奥义（可用时发光提示） */}
         <div style={{ display: 'flex', gap: 8 }}>
+          <Tip
+            text={
+              '出牌\n选中一张（上拖或轻点）后点此打出。\n物理牌耗阳炁，术法牌耗阴炁。\n' +
+              (selectedCard
+                ? canPlaySelected
+                  ? '当前这张可以打出。'
+                  : '当前这张炁量不足或已被沉默。'
+                : '尚未选中卡牌。')
+            }
+            placement="top"
+            style={{ flex: 1 }}
+          >
+            <JadeButton
+              onClick={playSelected}
+              disabled={!canPlaySelected}
+              variant="primary"
+              size="sm"
+              style={{
+                width: '100%',
+                boxShadow: canPlaySelected ? '0 0 14px rgba(216,84,58,0.7), 0 2px 6px rgba(120,90,40,0.3)' : undefined,
+                animation: canPlaySelected ? 'ctaPulse 1.6s ease-in-out infinite' : undefined,
+              }}
+            >
+              出　牌
+            </JadeButton>
+          </Tip>
+          <Tip
+            text={
+              '合并奥义\n两张同系牌（双物理 / 同五行术法 / 双功能）可合体，效果合并并放大。\n牌左边缘有金条 = 手牌里有能跟它合体的牌；选中后脉动朱红环 = 可直接点它合体。\n' +
+              (fuseHint ? `点击可直接与「${fuseHint.name}」合体。` : '当前选中牌没有可组合对象。')
+            }
+            placement="top"
+            style={{ flex: 1 }}
+          >
+            <JadeButton
+              onClick={() => {
+                if (!fuseHint) return;
+                const a = selectedCards[0];
+                if (!a) return;
+                tryFuse(a, fuseHint.uid ?? fuseHint.id);
+              }}
+              disabled={!fuseHint}
+              variant="gold"
+              size="sm"
+              style={{
+                width: '100%',
+                boxShadow: fuseHint ? '0 0 14px rgba(212,168,67,0.8), 0 2px 6px rgba(120,90,40,0.3)' : undefined,
+                animation: fuseHint ? 'ctaPulse 1.6s ease-in-out infinite' : undefined,
+              }}
+            >
+              {fuseHint
+                ? `合并 · ${fuseHint.name}`
+                : selectedCards.length === 1
+                  ? '无同系可合体'
+                  : '合并奥义'}
+            </JadeButton>
+          </Tip>
+        </div>
+
+        {/* 次级操作：「阴阳逆转」在左（辅助），「结束回合」在右下（主操作，防误触需连点两次） */}
+        <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <Tip
             text={`阴阳逆转\n把较多的那种炁，按 ${regRatio} : 1 的比例转换成另一种炁，用于凑齐出牌费用。\n每回合限一次；敌方前摇时不可用。`}
             placement="top"
@@ -1018,46 +1177,65 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
             </JadeButton>
           </Tip>
           <Tip
-            text={'结束回合\n放弃本回合剩余行动，进入敌方回合：\n敌方按其公示的招式卡行动，随后进入你的下一回合。\n腾出的时机可用于蓄炁或规避。'}
+            text={'结束回合\n放弃本回合剩余行动，进入敌方回合。\n为防误触需要连点两次确认。'}
             placement="top"
-            style={{ flex: 1 }}
+            style={{ flex: 1.15 }}
           >
             <JadeButton
-              onClick={() => dispatch({ type: 'END_TURN' })}
+              onClick={() => {
+                if (!endArmed) {
+                  setEndArmed(true);
+                  return;
+                }
+                setEndArmed(false);
+                dispatch({ type: 'END_TURN' });
+              }}
               disabled={isTelegraph}
               variant="primary"
               size="sm"
-              style={{ width: '100%' }}
+              style={{
+                width: '100%',
+                ...(endArmed
+                  ? {
+                      background: 'linear-gradient(180deg, var(--color-miaojin-light), var(--color-miaojin))',
+                      color: 'var(--color-card-title)',
+                      animation: 'ctaPulse 0.9s ease-in-out infinite',
+                    }
+                  : {}),
+              }}
             >
-              结 束 回 合
+              {endArmed ? '再点一次确认' : '结 束 回 合'}
             </JadeButton>
           </Tip>
         </div>
 
+        {/* 战报：深色底板 + 高亮文字（此前浅底灰字，对比度极低） */}
         <Tip
           text={'战报\n本场战斗的逐条记录：出牌、伤害、状态变化、弹反结果都会写在这里。\n最新的在最上方。'}
           placement="top"
-          style={{ flex: 1, display: 'flex', flexDirection: 'column', minHeight: 0 }}
+          style={{ display: 'block' }}
         >
           <div
             style={{
-              flex: 1,
+              height: 82,
               overflowY: 'auto',
               fontSize: 10.5,
-              lineHeight: 1.7,
-              color: 'var(--color-card-text-sub)',
-              background: 'rgba(251,247,236,0.72)',
-              border: '1px solid rgba(212,168,67,0.5)',
+              lineHeight: 1.6,
+              color: '#f6ead0',
+              background: 'linear-gradient(180deg, rgba(38,28,17,0.9), rgba(26,19,11,0.92))',
+              border: '1px solid rgba(212,168,67,0.55)',
+              borderLeft: '3px solid var(--color-miaojin)',
               borderRadius: 5,
               padding: '5px 8px',
-              minHeight: 0,
+              textShadow: '0 1px 2px rgba(0,0,0,0.75)',
             }}
           >
             {state.log
-              .slice(-14)
+              .slice(-40)
               .reverse()
+              .slice(0, 12)
               .map((l, i) => (
-                <div key={i} style={{ opacity: 1 - i * 0.055 }}>
+                <div key={i} style={{ opacity: 1 - i * 0.05 }}>
                   {l}
                 </div>
               ))}
@@ -1069,6 +1247,172 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
 }
 
 /* ============================== 子组件 ============================== */
+
+/**
+ * 敌人信息板：名字 / 血条 / 数值 三行定高。
+ *
+ * 统一规格（此前中间有盾条、两边是纯血条，高度与字号都不一致）：
+ * - 名字行 16 / 血条 96×10 / 数值行 14，盾与状态都挤进数值行
+ * - 半透明暗色底 + 金边，解决立绘复杂导致文字辨识度低的问题
+ */
+function EnemyInfoPanel({ enemy, dead }: { enemy: BattleState['enemies'][number]; dead: boolean }) {
+  return (
+    <div
+      style={{
+        width: '100%',
+        height: INFO_H,
+        display: 'flex',
+        flexDirection: 'column',
+        alignItems: 'center',
+        gap: 3,
+        padding: '4px 5px',
+        borderRadius: 7,
+        background: 'linear-gradient(180deg, rgba(34,25,15,0.78), rgba(24,17,10,0.86))',
+        border: '1px solid rgba(212,168,67,0.5)',
+        boxShadow: '0 2px 8px rgba(0,0,0,0.35)',
+        opacity: dead ? 0.4 : 1,
+      }}
+    >
+      <div style={{ height: 16, display: 'flex', alignItems: 'center', gap: 3, maxWidth: '100%' }}>
+        <span
+          style={{
+            fontFamily: 'var(--font-brush)',
+            fontSize: 11,
+            color: '#f7edd6',
+            textShadow: '0 1px 2px rgba(0,0,0,0.8)',
+            whiteSpace: 'nowrap',
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+          }}
+        >
+          {enemy.name}
+        </span>
+        {enemy.isBoss && (
+          <span
+            style={{
+              fontSize: 8,
+              background: 'var(--color-miaojin)',
+              color: 'var(--color-card-title)',
+              padding: '0 3px',
+              borderRadius: 2,
+              fontWeight: 700,
+            }}
+          >
+            首领
+          </span>
+        )}
+      </div>
+
+      <Tip text={`敌方气血 ${enemy.hp}/${enemy.maxHp}\n归零即被击败。`} placement="top">
+        <div
+          style={{
+            width: 96,
+            height: 10,
+            background: 'rgba(0,0,0,0.45)',
+            borderRadius: 5,
+            border: '1px solid rgba(212,168,67,0.8)',
+            overflow: 'hidden',
+          }}
+        >
+          <div
+            style={{
+              width: `${(enemy.hp / enemy.maxHp) * 100}%`,
+              height: '100%',
+              background: 'linear-gradient(90deg, #e8604a, var(--color-enemy-hp))',
+              transition: 'width 260ms',
+              boxShadow: '0 0 6px rgba(217,74,61,0.8)',
+            }}
+          />
+        </div>
+      </Tip>
+
+      <div
+        style={{
+          height: 14,
+          display: 'flex',
+          alignItems: 'center',
+          justifyContent: 'center',
+          gap: 4,
+          fontSize: 9.5,
+          color: '#e8dcc0',
+          fontVariantNumeric: 'tabular-nums',
+          whiteSpace: 'nowrap',
+        }}
+      >
+        <span>
+          {enemy.hp}/{enemy.maxHp}
+        </span>
+        {enemy.shield > 0 && (
+          <Tip text={`护盾 ${enemy.shield} 点\n优先于气血被扣减。`} placement="top">
+            <span style={{ color: 'var(--color-songhua)', fontWeight: 700 }}>盾{enemy.shield}</span>
+          </Tip>
+        )}
+        <span style={{ display: 'flex', gap: 2 }}>
+          {enemy.statuses.map((s, i) => (
+            <Tip key={i} text={STATUS_TIP[s.id] ?? `${STATUS_CN[s.id] ?? s.id}`} placement="top">
+              <span style={{ display: 'flex', alignItems: 'center' }}>
+                <StatusGlyph id={s.id} size={11} />
+                <span style={{ fontSize: 9 }}>{s.stacks > 1 ? s.stacks : ''}</span>
+              </span>
+            </Tip>
+          ))}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+/** 阴阳资源：大号数字 + 分段条 + 发光，与血条在视觉上区分开 */
+function QiResource({
+  label,
+  value,
+  cap,
+  color,
+  tip,
+}: {
+  label: string;
+  value: number;
+  cap: number;
+  color: string;
+  tip: string;
+}) {
+  return (
+    <Tip text={tip} placement="top" style={{ flex: 1, display: 'block' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 3 }}>
+        <span style={{ fontSize: 10, color, fontFamily: 'var(--font-brush)', fontWeight: 700 }}>{label}</span>
+        <span
+          style={{
+            fontSize: 15,
+            lineHeight: 1,
+            color: 'var(--color-card-title)',
+            fontFamily: 'var(--font-brush)',
+            fontVariantNumeric: 'tabular-nums',
+            textShadow: `0 0 6px ${color}`,
+          }}
+        >
+          {value}
+        </span>
+        <span style={{ fontSize: 9, color: 'var(--color-card-text-sub)' }}>/{cap}</span>
+        <div style={{ display: 'flex', gap: 1.5, flex: 1, minWidth: 0 }}>
+          {Array.from({ length: Math.min(cap, 14) }).map((_, i) => (
+            <div
+              key={i}
+              style={{
+                flex: 1,
+                minWidth: 2,
+                height: 9,
+                borderRadius: 1.5,
+                background: i < value ? color : 'rgba(120,100,70,0.22)',
+                boxShadow: i < value ? `0 0 5px ${color}` : 'none',
+                transition: 'background 160ms',
+              }}
+            />
+          ))}
+        </div>
+      </div>
+    </Tip>
+  );
+}
 
 /** 敌方招式卡：把「意图」做成一张可读的牌 */
 function IntentCard({
@@ -1108,66 +1452,70 @@ function IntentCard({
       text={`敌方招式「${label}」\n${gradeTip[grade] ?? grade}\n${note ? note + '\n' : ''}势 ${shi}/${shiCap}：不足则本回合只能回气蓄势`}
       placement="top"
     >
-    <div
-      style={{
-        minWidth: 76,
-        padding: '3px 6px',
-        borderRadius: 5,
-        background: willAttack && active
-          ? 'linear-gradient(180deg, rgba(255,236,220,0.98), rgba(240,200,180,0.95))'
-          : 'linear-gradient(180deg, rgba(251,247,236,0.95), rgba(236,217,171,0.9))',
-        border: `1.5px solid ${willAttack && active ? 'var(--color-zhuhong)' : 'var(--color-miaojin)'}`,
-        boxShadow: willAttack && active ? '0 0 10px rgba(194,59,34,0.55)' : '0 2px 5px rgba(120,90,40,0.2)',
-        textAlign: 'center',
-        lineHeight: 1.25,
-      }}
-    >
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3 }}>
-        <span
-          style={{
-            fontSize: 8,
-            width: 13,
-            height: 13,
-            lineHeight: '13px',
-            borderRadius: 2,
-            background: accent,
-            color: 'var(--color-xuanzhi-warm)',
-            fontWeight: 700,
-            flex: '0 0 auto',
-          }}
-        >
-          {gradeName[grade] ?? '常'}
-        </span>
-        <span
-          style={{
-            fontFamily: 'var(--font-brush)',
-            fontSize: 11,
-            color: willAttack && active ? 'var(--color-card-title)' : 'var(--color-card-text)',
-            fontWeight: willAttack && active ? 700 : 400,
-            whiteSpace: 'nowrap',
-          }}
-        >
-          {label}
-        </span>
-      </div>
-      {note && (
-        <div style={{ fontSize: 8, color: 'var(--color-card-text-sub)', whiteSpace: 'nowrap' }}>{note}</div>
-      )}
-      {/* 敌方势：出招资源 */}
-      <div style={{ display: 'flex', gap: 1, justifyContent: 'center', marginTop: 2 }}>
-        {Array.from({ length: shiCap }).map((_, i) => (
+      <div
+        style={{
+          width: '100%',
+          height: INTENT_H - 8,
+          padding: '2px 5px',
+          borderRadius: 5,
+          display: 'flex',
+          flexDirection: 'column',
+          justifyContent: 'center',
+          gap: 1,
+          background:
+            willAttack && active
+              ? 'linear-gradient(180deg, rgba(255,236,220,0.99), rgba(240,200,180,0.97))'
+              : 'linear-gradient(180deg, rgba(251,247,236,0.97), rgba(236,217,171,0.94))',
+          border: `1.5px solid ${willAttack && active ? 'var(--color-zhuhong)' : 'var(--color-miaojin)'}`,
+          boxShadow: willAttack && active ? '0 0 12px rgba(194,59,34,0.7)' : '0 2px 6px rgba(0,0,0,0.35)',
+          textAlign: 'center',
+          lineHeight: 1.2,
+          overflow: 'hidden',
+        }}
+      >
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 3 }}>
           <span
-            key={i}
             style={{
-              width: 5,
-              height: 3,
-              borderRadius: 1,
-              background: i < shi ? 'var(--color-hupo)' : 'rgba(120,100,70,0.28)',
+              fontSize: 8,
+              width: 13,
+              height: 13,
+              lineHeight: '13px',
+              borderRadius: 2,
+              background: accent,
+              color: 'var(--color-xuanzhi-warm)',
+              fontWeight: 700,
+              flex: '0 0 auto',
             }}
-          />
-        ))}
+          >
+            {gradeName[grade] ?? '常'}
+          </span>
+          <span
+            style={{
+              fontFamily: 'var(--font-brush)',
+              fontSize: 11,
+              color: willAttack && active ? 'var(--color-card-title)' : 'var(--color-card-text)',
+              fontWeight: willAttack && active ? 700 : 400,
+              whiteSpace: 'nowrap',
+            }}
+          >
+            {label}
+          </span>
+        </div>
+        {/* 势：出招资源 */}
+        <div style={{ display: 'flex', gap: 1, justifyContent: 'center' }}>
+          {Array.from({ length: shiCap }).map((_, i) => (
+            <span
+              key={i}
+              style={{
+                width: 5,
+                height: 3,
+                borderRadius: 1,
+                background: i < shi ? 'var(--color-hupo)' : 'rgba(120,100,70,0.28)',
+              }}
+            />
+          ))}
+        </div>
       </div>
-    </div>
     </Tip>
   );
 }
@@ -1178,14 +1526,41 @@ const KIND_LABEL: Record<string, string> = {
   support: '功能',
 };
 
+/** 五行中文名 */
+const WX_CN: Record<string, string> = { jin: '金', mu: '木', shui: '水', huo: '火', tu: '土' };
+
 /**
- * 游戏卡牌 · v2
- * 宣纸米白 / 竹简暖黄底；中央五行大图标；左上阴阳炁消耗圆点；底部高对比描述。
+ * 卡面底图映射：按「类型 / 五行」分型。
+ *
+ * 素材缺失时**不会白屏也不会报错** —— 这几张图只是叠加在 CSS 渐变底之上的一层
+ * 半透明图案，浏览器加载失败就自动只剩渐变底，游戏照常可玩。
+ * 生成提示词见 `public/art/卡面与界面提示词.md`。
+ */
+const CARD_FACE: Record<string, string> = {
+  ultimate: 'card_奥义.png',
+  physical: 'card_物理.png',
+  support: 'card_功能.png',
+  'spell-jin': 'card_术法_金.png',
+  'spell-mu': 'card_术法_木.png',
+  'spell-shui': 'card_术法_水.png',
+  'spell-huo': 'card_术法_火.png',
+  'spell-tu': 'card_术法_土.png',
+};
+
+/** 取一张卡的卡面分型 key（奥义优先于原类型，五行使术法再细分） */
+function faceKeyOf(card: Card): string {
+  if (card.isUltimate) return 'ultimate';
+  if (card.kind === 'spell' && card.wuxing) return `spell-${card.wuxing}`;
+  return card.kind;
+}
+
+/**
+ * 游戏卡牌 · v3
  *
  * 描边语义（用户约定）：
  * - 金色 = 可融合（未选中任何牌时，标出「有同系伙伴」的牌）
  * - 红色 = 可组合（已选中某张牌后，标出能与它合体的牌）
- * - 金色加粗 = 本张已被选中
+ * - 金色加粗 + 外发光环 = 本张已被选中；未参与组合的牌降透明
  */
 function GameCard({
   card,
@@ -1194,6 +1569,7 @@ function GameCard({
   selected,
   fusible,
   partner,
+  dimmed,
 }: {
   card: Card;
   cost: { yang: number; yin: number };
@@ -1201,45 +1577,67 @@ function GameCard({
   selected: boolean;
   fusible: boolean;
   partner: boolean;
+  dimmed: boolean;
 }) {
   const wx = card.wuxing;
   const accent = wx ? WX_STROKE[wx] : card.kind === 'physical' ? 'var(--color-zhuhong)' : 'var(--color-songhua)';
 
-  const borderColor = partner
-    ? 'var(--color-zhuhong)'
-    : selected || fusible
-      ? 'var(--color-miaojin)'
-      : accent;
-  const borderWidth = partner || selected ? 2.5 : 2;
-  const glow = partner
-    ? '0 0 14px rgba(194,59,34,0.85), 0 4px 12px rgba(90,60,30,0.4)'
-    : selected
-      ? '0 0 22px rgba(212,168,67,0.95), 0 8px 20px rgba(90,60,30,0.45)'
-      : fusible
-        ? '0 0 12px rgba(212,168,67,0.75), 0 3px 8px rgba(90,60,30,0.32)'
-        : '0 3px 8px rgba(90,60,30,0.32), inset 0 1px 0 rgba(255,255,255,0.8)';
+  const borderColor = selected
+    ? 'var(--color-miaojin)'
+    : partner
+      ? 'var(--color-zhuhong)'
+      : card.isUltimate
+        ? 'var(--color-miaojin-deep)'
+        : accent;
+  const borderWidth = selected || partner ? 3 : card.isUltimate ? 2.5 : 1.5;
 
-  // 牌面底：物理=竹简暖黄偏朱；术法=宣纸偏五行色；功能=玉青
-  const faceBase =
-    card.kind === 'physical'
-      ? 'linear-gradient(158deg, #fdf6e6 0%, #f2dfae 100%)'
+  /**
+   * 外发光环：**只**给「已选中 / 可合体目标」两种状态。
+   *
+   * 【曾经的 Bug】静止态也把「手上有可融合对象」的牌统统镀上金环 —— 实测一副手牌里有
+   * 3 张同系牌，于是一屏出现三道金框，而金框又同时是「选中」的颜色，
+   * 玩家根本分不清哪张是选中的 →「高亮包边不明显」。
+   * 现在三种状态的视觉语言彻底分开：
+   *   静止可合体 = 左边缘一条金条（收拢时恰好可见）
+   *   已选中     = 金色粗环 + 上浮放大
+   *   可合体目标 = 朱红脉动环 + 轻微上浮
+   */
+  const glow = selected
+    ? '0 0 0 3px rgba(255,229,150,0.95), 0 0 34px rgba(212,168,67,1), 0 12px 26px rgba(40,26,12,0.55)'
+    : partner
+      ? '0 0 0 2.5px rgba(255,168,140,0.9), 0 0 26px rgba(194,59,34,0.95), 0 8px 16px rgba(40,26,12,0.5)'
+      : '0 3px 8px rgba(40,26,12,0.4), inset 0 1px 0 rgba(255,255,255,0.8)';
+
+  /**
+   * 牌面底：物理=竹简暖黄；功能=玉青；术法=宣纸；奥义=描金烫底。
+   * 全部走 token，不在本文件留下 hex 字面量。
+   */
+  const faceBase = card.isUltimate
+    ? 'linear-gradient(158deg, var(--color-xuanzhi-warm) 0%, var(--color-miaojin-light) 58%, var(--color-miaojin) 100%)'
+    : card.kind === 'physical'
+      ? 'linear-gradient(158deg, var(--color-xuanzhi-warm) 0%, var(--color-zhujian) 100%)'
       : card.kind === 'support'
-        ? 'linear-gradient(158deg, #f4faf5 0%, #dceee0 100%)'
-        : 'linear-gradient(158deg, #fdf8ec 0%, #ecdfc4 100%)';
+        ? 'linear-gradient(158deg, var(--color-yushi) 0%, var(--color-yushi-deep) 100%)'
+        : 'linear-gradient(158deg, var(--color-xuanzhi) 0%, var(--color-zhujian-deep) 100%)';
 
-  const kindTip = `「${card.name}」\n${KIND_LABEL[card.kind]}${card.hits > 1 ? ` · ${card.hits} 段` : ''}${card.aoe ? ' · 群体' : ''}\n${card.desc}`;
+  /** 分型卡面图（可缺省）：缺图时这一层不渲染，只剩上面的渐变底 */
+  const faceImg = CARD_FACE[faceKeyOf(card)];
+
+  const kindTip = `「${card.name}」\n${KIND_LABEL[card.kind]}${wx ? `·${WX_CN[wx]}` : ''}${card.hits > 1 ? ` · ${card.hits} 段` : ''}${card.aoe ? ' · 群体' : ''}\n${card.desc}`;
 
   return (
     <div
       style={{
-        width: 78,
-        height: 112,
+        width: CARD_W,
+        height: CARD_H,
         borderRadius: 8,
         border: `${borderWidth}px solid ${borderColor}`,
         background: faceBase,
         boxShadow: glow,
-        transition: 'box-shadow 140ms, border-color 140ms',
-        opacity: playable ? 1 : 0.5,
+        // 可合体目标：脉动，与「选中」的静态金环区分开
+        animation: partner ? 'fuseRingPulse 1.35s ease-in-out infinite' : undefined,
+        transition: 'box-shadow 150ms, border-color 150ms, opacity 150ms',
+        opacity: dimmed ? 0.45 : playable ? 1 : 0.55,
         display: 'flex',
         flexDirection: 'column',
         padding: '5px 5px 4px',
@@ -1248,7 +1646,46 @@ function GameCard({
         overflow: 'hidden',
       }}
     >
-      {/* 五指中央大图标（半透明水印） */}
+      {/*
+        静止态「有可合体对象」的指示：只在**左边缘**描一条金条。
+        手牌收拢时每张牌恰好只露出左侧一条边，金条正好露在外面 —— 既不跟
+        「选中的金环」抢语义，也不会像以前那样一屏四五道金框。
+      */}
+      {fusible && !selected && !partner && (
+        <div
+          style={{
+            position: 'absolute',
+            left: 0,
+            top: 0,
+            bottom: 0,
+            width: 3.5,
+            zIndex: 4,
+            background: 'linear-gradient(180deg, rgba(255,229,150,0.98), rgba(212,168,67,0.95))',
+            boxShadow: '0 0 7px rgba(212,168,67,0.9)',
+          }}
+        />
+      )}
+
+      {/*
+        分型卡面图（物理 / 五行术法 / 功能 / 奥义 各一张，见 public/art/卡面与界面提示词.md）。
+        做成「叠在渐变底上的一层半透明图案」而不是直接当 background，
+        这样素材没生成时只是少一层花纹，文字对比度和可玩性都不受影响。
+      */}
+      {faceImg && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            backgroundImage: `url(${BASE}art/${faceImg})`,
+            backgroundSize: 'cover',
+            backgroundPosition: 'center',
+            opacity: card.isUltimate ? 0.6 : 0.42,
+            pointerEvents: 'none',
+          }}
+        />
+      )}
+
+      {/* 五行/类型中央大图标（半透明水印） */}
       <div
         style={{
           position: 'absolute',
@@ -1256,10 +1693,10 @@ function GameCard({
           display: 'flex',
           alignItems: 'center',
           justifyContent: 'center',
-          opacity: 0.22,
+          opacity: 0.2,
         }}
       >
-        {wx ? <WuXingGlyph wuxing={wx} size={64} opacity={1} /> : <KindGlyph kind={card.kind} />}
+        {wx ? <WuXingGlyph wuxing={wx} size={62} opacity={1} /> : <KindGlyph kind={card.kind} />}
       </div>
 
       {/* 顶部：标题 */}
@@ -1278,7 +1715,6 @@ function GameCard({
             {card.name}
           </span>
         </Tip>
-        {/* 五行小印 */}
         {wx && (
           <Tip text={WUXING_TIP[wx] ?? wx} placement="top">
             <WuXingSeal wuxing={wx} size={15} />
@@ -1286,7 +1722,7 @@ function GameCard({
         )}
       </div>
 
-      {/* 中央：类型标签 */}
+      {/* 类型标签 */}
       <div
         style={{
           position: 'relative',
@@ -1296,22 +1732,20 @@ function GameCard({
           color: 'var(--color-card-text-sub)',
         }}
       >
-        {wx
-          ? `${KIND_LABEL[card.kind]}·${wx === 'jin' ? '金' : wx === 'mu' ? '木' : wx === 'shui' ? '水' : wx === 'huo' ? '火' : '土'}`
-          : KIND_LABEL[card.kind]}
+        {wx ? `${KIND_LABEL[card.kind]}·${WX_CN[wx]}` : KIND_LABEL[card.kind]}
         {card.hits > 1 ? ` ×${card.hits}段` : ''}
         {card.aoe ? ' ·群' : ''}
       </div>
 
-      {/* 底部：效果描述（加大加粗高对比） */}
+      {/* 效果描述：加大字重与对比度（此前偏小偏灰） */}
       <div
         style={{
           position: 'relative',
           zIndex: 2,
-          fontSize: 9.5,
-          lineHeight: 1.25,
-          color: 'var(--color-card-text)',
-          fontWeight: 600,
+          fontSize: 10,
+          lineHeight: 1.3,
+          color: '#3a2c18',
+          fontWeight: 700,
           marginTop: 2,
           display: '-webkit-box',
           WebkitLineClamp: 3,
@@ -1322,7 +1756,7 @@ function GameCard({
         {card.desc}
       </div>
 
-      {/* 左上：炁消耗（红/蓝小圆点） */}
+      {/* 左上：炁消耗 */}
       <div style={{ position: 'absolute', top: 4, left: 4, display: 'flex', gap: 2, zIndex: 3 }}>
         {cost.yang > 0 && (
           <Tip text={`阳炁消耗 ${cost.yang} 点\n攻击与调息可获得阳炁。`} placement="top">
@@ -1336,8 +1770,12 @@ function GameCard({
         )}
       </div>
 
-      {/* 融合提示角标 */}
-      {(fusible || partner) && (
+      {/*
+        融合提示角标：只保留「可合体」（选中之后才有意义）。
+        静止态的「可融合」角标已删除 —— 它钉在右下角，而手牌收拢时右下角被
+        右边那张牌整个盖住，等于看不见；现在改用左边缘金条表达同一件事。
+      */}
+      {partner && (
         <div
           style={{
             position: 'absolute',
@@ -1348,11 +1786,11 @@ function GameCard({
             borderRadius: 2,
             zIndex: 4,
             fontWeight: 700,
-            background: partner ? 'var(--color-zhuhong)' : 'var(--color-miaojin)',
-            color: partner ? 'var(--color-xuanzhi-warm)' : 'var(--color-card-title)',
+            background: 'var(--color-zhuhong)',
+            color: 'var(--color-xuanzhi-warm)',
           }}
         >
-          {partner ? '可合体' : '可融合'}
+          可合体
         </div>
       )}
 
@@ -1378,7 +1816,7 @@ function GameCard({
   );
 }
 
-/** 炁消耗圆点：阳=朱红、阴=石青 */
+/** 炁消耗圆点：阳=琥珀、阴=石青 */
 function QiPip({ type, n }: { type: 'yang' | 'yin'; n: number }) {
   const color = type === 'yang' ? 'var(--color-hupo)' : 'var(--color-shishui)';
   return (
