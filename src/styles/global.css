@@ -292,3 +292,64 @@ button {
 /* ===================== 滚动条 ===================== */
 ::-webkit-scrollbar { width: 4px; height: 4px; }
 ::-webkit-scrollbar-thumb { background: rgba(138, 90, 52, 0.4); border-radius: 2px; }
+
+/* ==========================================================================
+   归墟（弃牌阶段）
+   ========================================================================== */
+
+/* 太极旋涡缓慢自转 */
+@keyframes taijiSpin {
+  from { transform: rotate(0deg); }
+  to { transform: rotate(360deg); }
+}
+
+/* 归墟流光：卡牌化为一道炁，飞向屏幕底部的阴阳炁条。
+   --dx / --dy 由运行时按卡牌与炁条的实际位置算出来，所以同一套关键帧
+   能适配任意一张牌、任意分辨率。 */
+@keyframes relicFlow {
+  0% {
+    transform: translate(0, 0) scale(1) rotate(0deg);
+    opacity: 1;
+  }
+  18% {
+    transform: translate(calc(var(--dx) * 0.1), calc(var(--dy) * 0.1 - 26px)) scale(1.22) rotate(-8deg);
+    opacity: 1;
+  }
+  72% {
+    opacity: 0.95;
+  }
+  100% {
+    transform: translate(var(--dx), var(--dy)) scale(0.28) rotate(22deg);
+    opacity: 0;
+  }
+}
+
+/* 大量归墟：金色水墨莲花绽放（粗线条画风，靠描边层叠表现） */
+@keyframes relicLotus {
+  0% {
+    transform: scale(0.18) rotate(-16deg);
+    opacity: 0;
+  }
+  28% {
+    opacity: 1;
+  }
+  62% {
+    opacity: 0.92;
+  }
+  100% {
+    transform: scale(2.3) rotate(14deg);
+    opacity: 0;
+  }
+}
+
+/* 旋涡吸入时的脉冲 */
+@keyframes vortexPulse {
+  0%, 100% { transform: scale(1); filter: brightness(1); }
+  50% { transform: scale(1.12); filter: brightness(1.25); }
+}
+
+/* 归墟面板入场 */
+@keyframes relicPanelIn {
+  0% { transform: translateY(24px) scale(0.96); opacity: 0; }
+  100% { transform: translateY(0) scale(1); opacity: 1; }
+}

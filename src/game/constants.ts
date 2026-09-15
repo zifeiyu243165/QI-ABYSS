@@ -45,6 +45,21 @@ export const PARALYZE_MISS_PER_STACK = 0.3;
 /** 麻痹落空概率上限 */
 export const PARALYZE_MISS_CAP = 0.75;
 
+/* ============================== 霜寒 ============================== */
+/**
+ * 霜寒（frost）：破甲 + 减速。
+ * - 破甲：每层降低目标防御 12%，上限 36%（与 armorBreak 独立叠乘）—— 见 damage.effectiveDefense
+ * - 减速：每层为敌方招式增加 1 点「势」消耗，上限 +2 —— 见 battle.enemyAct
+ */
+/** 霜寒：每层降低目标防御的比例（破甲） */
+export const FROST_DEF_PENALTY_PER_STACK = 0.12;
+/** 霜寒破甲上限 */
+export const FROST_DEF_PENALTY_CAP = 0.36;
+/** 霜寒：每层为敌方招式增加的「势」消耗（减速） */
+export const FROST_SLOW_COST_PER_STACK = 1;
+/** 霜寒减速上限 */
+export const FROST_SLOW_COST_CAP = 2;
+
 /** 基础暴击率 */
 export const BASE_CRIT_RATE = 0.15;
 /** 基础暴击倍率 */
@@ -161,10 +176,30 @@ export const HITSTOP_MAX_MS = 300;
 /** 触发最大卡帧的伤害倍率 */
 export const HITSTOP_MAX_MUL = 4;
 
-/** 手牌上限 */
-export const HAND_LIMIT = 8;
+/**
+ * 手牌上限。**回合结束时**按此结算：超出的牌必须走「归墟」弃掉。
+ * 注意它**不是**抽牌时的硬上限 —— 见 HAND_DRAW_CAP。
+ */
+export const HAND_LIMIT = 6;
+/**
+ * 抽牌硬上限。
+ * 【必须大于 HAND_LIMIT】否则抽牌阶段就把手牌压到上限以内，回合结束时永远不超限，
+ * 「归墟」阶段永远触发不了，整套机制沦为死代码。超过此值抽到的牌直接进弃牌堆。
+ */
+export const HAND_DRAW_CAP = 10;
 /** 每回合抽牌数 */
 export const DRAW_PER_TURN = 3;
+
+/* ============================== 归墟（弃牌阶段） ============================== */
+
+/** 归墟化炁：每主动弃 1 张牌换得的炁点数 */
+export const RELIC_QI_GAIN = 1;
+/** 归墟弃置达到此张数时播放「大量归墟」的莲花演出 */
+export const RELIC_LOTUS_THRESHOLD = 3;
+/** 贪嗔蠹归墟夺牌：每张被夺弃牌为它换得的护盾 */
+export const TANCHEN_SHIELD_PER_CARD = 9;
+/** 贪嗔蠹开始夺牌所需的单次归墟弃置张数 */
+export const TANCHEN_STEAL_MIN = 2;
 
 /* ============================== 五行 ============================== */
 

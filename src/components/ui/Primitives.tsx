@@ -99,7 +99,7 @@ export function JadeButton({
   const bg = disabled
     ? 'rgba(180,170,150,0.3)'
     : variant === 'primary'
-      ? 'linear-gradient(180deg, #d8543a, var(--color-zhuhong))'
+      ? 'linear-gradient(180deg, var(--color-zhuhong-light), var(--color-zhuhong))'
       : variant === 'gold'
         ? 'linear-gradient(180deg, var(--color-miaojin-light), var(--color-miaojin))'
         : 'linear-gradient(180deg, rgba(251,247,236,0.98), rgba(236,217,171,0.95))';
@@ -145,6 +145,11 @@ export function JadeButton({
 /**
  * 粗壮 + 带流光的计量条。
  * 设计哲学 §2.3：炁量变化要有「气在流转」的呼吸感。
+ *
+ * 【护盾】传入 `shield > 0` 时，条形改为「双段」：
+ * 横向刻度把血条**压缩**，右侧紧接一段松花绿的护盾条。
+ * 刻度基准取 `cap + shield`，所以拿到护盾的瞬间血条会肉眼可见地变短一截 ——
+ * 这正是「护盾顶在前面」的直观表达，而不是在血条上盖一层色。
  */
 export function FlowBar({
   value,
@@ -154,6 +159,7 @@ export function FlowBar({
   label,
   showText = true,
   segments,
+  shield = 0,
 }: {
   value: number;
   cap: number;
@@ -163,8 +169,15 @@ export function FlowBar({
   showText?: boolean;
   /** 是否用分段小格（炁）而非连续条（血） */
   segments?: boolean;
+  /** 护盾值；> 0 时压缩血条并在右侧额外绘制护盾条 */
+  shield?: number;
 }) {
   const pct = cap > 0 ? Math.max(0, Math.min(1, value / cap)) : 0;
+  const shieldVal = Math.max(0, Math.floor(shield ?? 0));
+  /** 有盾时改用动态刻度：血 + 盾正好铺满 */
+  const denom = cap + shieldVal;
+  const hpPct = denom > 0 ? Math.max(0, Math.min(1, value / denom)) : 0;
+  const shPct = denom > 0 ? shieldVal / denom : 0;
 
   if (segments) {
     const n = Math.min(cap, 14);
@@ -205,6 +218,8 @@ export function FlowBar({
     );
   }
 
+  const hasShield = shieldVal > 0;
+
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 4, flex: 1 }}>
       {label && (
@@ -218,30 +233,47 @@ export function FlowBar({
           borderRadius: height / 2,
           overflow: 'hidden',
           border: '1px solid rgba(212,168,67,0.5)',
+          display: 'flex',
         }}
       >
         <div
           style={{
-            width: `${pct * 100}%`,
+            width: `${(hasShield ? hpPct : pct) * 100}%`,
             height: '100%',
             background: color,
-            borderRadius: height / 2,
+            borderRadius: hasShield ? 0 : height / 2,
             transition: 'width 280ms cubic-bezier(0.2,0.9,0.3,1)',
             boxShadow: `0 0 8px ${color}`,
           }}
         />
+        {hasShield && (
+          <div
+            style={{
+              width: `${shPct * 100}%`,
+              height: '100%',
+              // 松花绿护盾段，左侧一道亮边与血条切开
+              background: 'linear-gradient(90deg, var(--color-shield), var(--color-shield-light))',
+              borderLeft: '1.5px solid rgba(255,246,220,0.95)',
+              transition: 'width 280ms cubic-bezier(0.2,0.9,0.3,1)',
+              boxShadow: '0 0 8px rgba(123,182,97,0.9)',
+            }}
+          />
+        )}
       </div>
       {showText && (
         <span
           style={{
             fontSize: 10,
-            width: 44,
+            width: hasShield ? 72 : 44,
             textAlign: 'right',
             color: 'var(--color-card-text)',
             fontVariantNumeric: 'tabular-nums',
           }}
         >
           {value}/{cap}
+          {hasShield && (
+            <span style={{ color: 'var(--color-shilv)', fontWeight: 700, marginLeft: 3 }}>盾{shieldVal}</span>
+          )}
         </span>
       )}
     </div>

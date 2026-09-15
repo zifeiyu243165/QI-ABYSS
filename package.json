@@ -9,7 +9,8 @@
     "build:safe": "tsc -b && vite build --emptyOutDir false",
     "lint": "oxlint",
     "test": "vitest run",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "guard": "node scripts/架构守卫.mjs"
   },
   "dependencies": {
     "react": "^19.2.8",

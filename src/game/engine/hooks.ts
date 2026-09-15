@@ -8,7 +8,7 @@
  * 自检：grep -r "solarTermId" src/game/engine/ 应只命中本文件。
  */
 
-import type { BattleState, Card, DamageContext, DamageModifier, Effect, SolarTerm } from '../types';
+import type { BattleState, Card, DamageContext, DamageDealtInfo, DamageModifier, Effect, SolarTerm } from '../types';
 import { SOLAR_TERM_MAP } from '../data/world';
 
 export function getTerm(state: BattleState): SolarTerm | null {
@@ -72,9 +72,9 @@ export function fireCardPlayed(ctx: DamageContext, card: Card): Effect[] {
   return getTerm(ctx.state)?.hooks.onCardPlayed?.(ctx, card) ?? [];
 }
 
-/** 造成伤害后 */
-export function fireDamageDealt(ctx: DamageContext, dealt: number): Effect[] {
-  return getTerm(ctx.state)?.hooks.onDamageDealt?.(ctx, dealt) ?? [];
+/** 造成伤害后（携带本次命中事实：打中了谁、暴没暴击、是否真实伤害） */
+export function fireDamageDealt(ctx: DamageContext, hit: DamageDealtInfo): Effect[] {
+  return getTerm(ctx.state)?.hooks.onDamageDealt?.(ctx, hit) ?? [];
 }
 
 /** 调息效率倍率 */
@@ -85,4 +85,12 @@ export function getRegulateMul(state: BattleState): number {
 /** 是否强制弹反（大雪） */
 export function isForceParry(state: BattleState): boolean {
   return getTerm(state)?.hooks.forceParry ?? false;
+}
+
+/**
+ * 归墟夺牌：玩家每弃置 1 张牌，敌方获得的护盾点数（寒露肃杀）。
+ * 返回 0 表示本节气不夺牌。
+ */
+export function getStealDiscardShield(state: BattleState): number {
+  return getTerm(state)?.hooks.stealDiscardShield ?? 0;
 }

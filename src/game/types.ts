@@ -40,7 +40,11 @@ export type ShiShenId =
 /** 状态 */
 export type StatusId =
   | 'burn'      // 灼烧 DOT
-  | 'frost'     // 霜寒：减速 + 破甲
+  /**
+   * 霜寒：破甲（每层降防 12%，上限 36%）+ 减速（每层使目标招式多耗 1 点「势」，上限 +2）。
+   * 由 damage.effectiveDefense 与 battle.enemyAct 共同读取 —— 详见 data/statuses.ts。
+   */
+  | 'frost'
   | 'freeze'    // 冻结：下回合无法行动
   | 'weak'      // 虚弱：伤害降低
   | 'armorBreak'// 破甲：防御降低
@@ -127,6 +131,28 @@ export interface StatusInstance {
   duration: number;
 }
 
+/** 状态载荷：一个状态 id + 层数 + 持续回合 —— 全项目状态载荷的唯一形状 */
+export interface StatusSpec {
+  id: StatusId;
+  stacks: number;
+  duration: number;
+}
+
+/** 削炁载荷：削弱类意图直接抽走的阳炁 / 阴炁（「夺炁」） */
+export interface QiDrain {
+  yang?: number;
+  yin?: number;
+}
+
+/** 一次伤害结算的事实快照，供节气钩子判断「打中了谁、暴没暴击」 */
+export interface DamageDealtInfo {
+  amount: number;
+  /** 实际被命中的目标 id */
+  targetId: string;
+  crit: boolean;
+  isTrue: boolean;
+}
+
 export interface DamageContext {
   attacker: Combatant;
   defender: Combatant;
@@ -167,7 +193,7 @@ export interface Card {
   /** 描述 */
   desc: string;
   /** 附加状态 */
-  inflict?: { id: StatusId; stacks: number; duration: number };
+  inflict?: StatusSpec;
   /** 治疗效果（占最大生命百分比或固定值） */
   heal?: number;
   /** 护盾 */
@@ -199,6 +225,12 @@ export interface Equipment {
   atkBonus: number;
   /** 法器：炁上限 */
   qiCapBonus: number;
+  /**
+   * 炁上限加成作用在哪一脉。兵刃的 qiCapBonus 为 0，填 'both' 即可。
+   * 【有意设为必填】将来新增装备却忘记声明侧别时，编译会直接失败 —— 这正是本次
+   * 想建立的「强制契约」：让「数据声明了、引擎没实现」这类缺陷在 tsc 阶段暴露。
+   */
+  qiCapSide: 'yang' | 'yin' | 'both';
   /** 连击段数加成 */
   hitsBonus: number;
   /** 五行附魔（法器） */
@@ -217,7 +249,7 @@ export interface EnchantCombo {
   /** 附魔伤害倍率（相对本次物理伤害） */
   mul: number;
   /** 附加状态 */
-  inflict?: { id: StatusId; stacks: number; duration: number };
+  inflict?: StatusSpec;
 }
 
 /* ============================== 角色 / 敌人 ============================== */
@@ -263,14 +295,10 @@ export interface Enemy extends Combatant {
   shiCap: number;
 }
 
-export interface EnemyIntent {
-  /** 意图类型：攻击 / 蓄力 / 防御 / 群攻 / 增益 / 削弱 */
-  type: 'attack' | 'charge' | 'guard' | 'aoe' | 'buff' | 'debuff';
-  /** 倍率 */
-  mul: number;
-  /** 伤害数值（直接用，敌人不吃玩家的攻击力体系） */
-  damage?: number;
-  wuxing?: WuXing;
+/** 招式品阶 */
+export type IntentGrade = 'base' | 'art' | 'dire' | 'kill';
+
+interface IntentBase {
   label: string;
   /** 招式品阶：决定意图卡的描边与光效 —— 基础 / 精妙 / 凶险 / 杀招 */
   grade?: IntentGrade;
@@ -278,18 +306,35 @@ export interface EnemyIntent {
   cost?: number;
   /** 是否标记为「可弹反」的招式（默认 attack / aoe 可弹反） */
   parryable?: boolean;
-  /** 招式附加的状态（打向玩家） */
-  inflict?: { id: StatusId; stacks: number; duration: number };
-  /** 招式附带的自增益（buff 类意图） */
-  selfShield?: number;
-  /** 招式附带的自蓄力（charge 类意图） */
-  selfCharge?: number;
   /** 招式短注，展示在意图卡上 */
   note?: string;
 }
 
-/** 招式品阶 */
-export type IntentGrade = 'base' | 'art' | 'dire' | 'kill';
+/**
+ * 削弱类意图：**必须**真的削弱到东西 —— 状态（inflict）或炁（qiDrain）二者至少其一。
+ *
+ * 采用判别联合后，「声明了一个 debuff 却没有任何载荷」会在编译期直接报错，
+ * 而不是像过去那样变成一次「无扣炁、无日志、无状态」的空壳出招（加班怨灵「夺炁」的病灶）。
+ */
+type DebuffIntent = IntentBase & { type: 'debuff' } & (
+  | { inflict: StatusSpec; qiDrain?: QiDrain }
+  | { inflict?: never; qiDrain: QiDrain }
+);
+
+/**
+ * 敌人意图（判别联合）。
+ *
+ * 【铁律】`mul` 字段已彻底删除：`attack / aoe` 现在**必须**写 `damage`。
+ * 过去 `damage ?? Math.floor(e.atk * intent.mul)` 的 mul 回退是一条永不触发的死分支，
+ * mul 也就成了典型的「代码活、数据死」字段 —— 删掉它是为了让「意图写了倍率却没落点」
+ * 这种缺陷在编译期就被拦住。
+ */
+export type EnemyIntent =
+  | (IntentBase & { type: 'attack' | 'aoe'; damage: number; wuxing?: WuXing; inflict?: StatusSpec })
+  | (IntentBase & { type: 'guard'; selfShield?: number })
+  | (IntentBase & { type: 'buff'; selfCharge?: number; selfShield?: number })
+  | (IntentBase & { type: 'charge' })
+  | DebuffIntent;
 
 /* ============================== 月令 / 节气 / 十神 ============================== */
 
@@ -314,8 +359,14 @@ export interface SolarTermHooks {
   onBattleStart?(ctx: DamageContext): Effect[];
   onTurnStart?(ctx: DamageContext): Effect[];
   onTurnEnd?(ctx: DamageContext): Effect[];
+  /**
+   * 出牌即触发（在伤害结算之后）。
+   * 【当前无节气使用】原「白露」的霜寒钩子已迁移到 onDamageDealt（它需要「命中后」的语义，
+   * 且要锁定实际被命中的目标），本钩子因此暂时没有数据消费方 ——
+   * 但**保留为扩展点**，供未来「打出某类牌就给收益」的节气使用，请勿删除。
+   */
   onCardPlayed?(ctx: DamageContext, card: Card): Effect[];
-  onDamageDealt?(ctx: DamageContext, dealt: number): Effect[];
+  onDamageDealt?(ctx: DamageContext, hit: DamageDealtInfo): Effect[];
   /** 修改卡牌消耗，返回新消耗 */
   modifyCardCost?(ctx: DamageContext, card: Card, cost: { yang: number; yin: number }): { yang: number; yin: number };
   /** 提供伤害修饰器（只允许 mul，节气不得触碰基础值 —— 性命双修） */
@@ -328,6 +379,11 @@ export interface SolarTermHooks {
   regulateMul?: number;
   /** 是否强制弹反（大雪） */
   forceParry?: boolean;
+  /**
+   * 归墟夺牌：玩家每弃置 1 张牌，敌方获得的护盾点数（寒露）。
+   * 0 / undefined 表示本节气不夺牌。
+   */
+  stealDiscardShield?: number;
 }
 
 export interface SolarTerm {
@@ -391,6 +447,8 @@ export interface Campaign {
 export type BattlePhase =
   | 'intro'        // 开场仪式
   | 'playerTurn'
+  /** 归墟：回合结束时手牌超上限，必须先化掉多余的牌才能交给敌方行动 */
+  | 'relic'
   | 'enemyTelegraph' // 敌方前摇（弹反窗口）
   | 'enemyTurn'
   | 'won'
@@ -438,6 +496,15 @@ export interface BattleState {
   deck: Card[];
   discard: Card[];
 
+  /**
+   * 归墟（弃牌阶段）还需弃置的张数。
+   * 进入归墟时 = 手牌数 - HAND_LIMIT；每弃一张减 1，减到 0 即结束归墟、交给敌方行动。
+   * 归墟只要求弃掉「超出上限」的那几张，弃哪几张由玩家自己权衡 —— 这是策略点。
+   */
+  relicQuota: number;
+  /** 本次归墟累计已弃置张数（用于敌方夺牌与「大量归墟」演出判定） */
+  relicDiscarded: number;
+
   solarTermId: string;
   lunarMonthId: string;
 
@@ -467,6 +534,8 @@ export interface BattleState {
   bonusHits: number;
   /** 法修：上一段术法的五行，用于判定相生链（木→火→土→金→水） */
   lastSpellWuxing: WuXing | null;
+  /** 法修：本回合五行相生连击数（非相生归零）。用于「每张伤害递增 10%」 */
+  faxiuChain: number;
 
   /** 种子随机数状态（保证确定性） */
   rngState: number;

@@ -43,6 +43,20 @@
   --color-miaojin-light: #eccb7a;/* 描金高光 */
   --color-miaojin-deep: #a67c2e; /* 描金暗部 */
 
+  /* ---- 高光阶（按钮 / 血条 / 护盾条的渐变亮端） ---- */
+  --color-zhuhong-light: #d8543a;   /* 朱红高光 · 玉按钮渐变上端 */
+  --color-enemy-hp-light: #e8604a;  /* 敌方血条高光 */
+  --color-songhua-light: #a8d894;   /* 松花绿高光 · 护盾条渐变右端 */
+
+  /* ---- 深色面板上的文字（保证对比度，禁用灰色字符） ---- */
+  --color-mibai: #f6ead0;        /* 面板主文字 · 米白（亮） */
+  --color-mibai-dim: #e8dcc0;    /* 面板次级文字 · 米白（暗） */
+  --color-danjinhui: #d8c9a4;    /* 淡金灰 · 辅助说明 */
+  --color-ink-soft: #3a2c18;     /* 浅墨 · 战报正文 */
+
+  /* ---- 归墟 · 流光的暖色端（阳炁用 token 本身的蓝，阴炁用暖桃形成对撞） ---- */
+  --color-liuguang-yin: #ffb38a; /* 阴炁流光 · 暖桃色光晕 */
+
   /* ---- 青绿山水（背景主色，替代灰绿枯山水） ---- */
   --color-qinglv: #7fa88c;       /* 青绿 · 石绿 */
   --color-shilv: #5a8a6a;        /* 石绿深 */
@@ -72,6 +86,7 @@
   --color-hp-grad-b: #a52a1a;
   --color-enemy-hp: #d94a3d;          /* 敌方血条 · 亮红 */
   --color-shield: var(--color-songhua);
+  --color-shield-light: var(--color-songhua-light);
   --color-crit: var(--color-minghuang);
   --color-truedmg: #ffffff;
   --color-parry: var(--color-minghuang);

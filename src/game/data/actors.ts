@@ -2,7 +2,7 @@ import type { Campaign, Character, Enemy } from '../types';
 
 /* ============================== 角色（3 名） ============================== */
 
-export const CHARACTERS: Character[] = [
+export const CHARACTERS = [
   {
     id: 'luqingya', name: '陆青崖', rizhu: '庚金', wuxing: 'jin',
     stance: 'tixiu', shishen: ['qisha', 'zhengcai'],
@@ -27,7 +27,7 @@ export const CHARACTERS: Character[] = [
     lore: '不站任何一边，只遵循自己的道。滑板袋里那把苗刀从来没洗过血。',
     palette: { robe: '#c23b22', trim: '#f5c518', hair: '#1a1f2b' },
   },
-];
+] satisfies readonly Character[];
 
 export const CHARACTER_MAP: Record<string, Character> = Object.fromEntries(
   CHARACTERS.map((c) => [c.id, c]),
@@ -49,7 +49,7 @@ export const CHARACTER_MAP: Record<string, Character> = Object.fromEntries(
  * - BOSS HP 提升约 2 倍，新增「杀招」高伤招式
  * - 每只心猿都有**招式牌组**（intents）与**势**资源，出招有成本、有品阶
  */
-export const ENEMIES: Enemy[] = [
+export const ENEMIES = [
   /* ---------- 阴执 · 杂兵 ---------- */
   {
     id: 'enemy_jiaozao', name: '焦躁鬼', shape: 'wraith',
@@ -58,11 +58,11 @@ export const ENEMIES: Enemy[] = [
     chargeStacks: 0, shi: 0, shiCap: 3,
     lore: '地铁早高峰挤出来的戾气，见人就咬。它不会思考，只会反应。',
     intents: [
-      { type: 'attack', mul: 1.0, damage: 18, wuxing: 'huo', label: '抓挠', grade: 'base', cost: 0, note: '快速试探' },
-      { type: 'attack', mul: 1.0, damage: 18, wuxing: 'huo', label: '抓挠', grade: 'base', cost: 0, note: '快速试探' },
-      { type: 'buff', mul: 0, label: '躁意上涌', grade: 'art', cost: 1, selfCharge: 1, note: '自身蓄势 +1' },
-      { type: 'attack', mul: 1.5, damage: 27, wuxing: 'huo', label: '怒咬', grade: 'dire', cost: 2, note: '消耗势，重击' },
-      { type: 'debuff', mul: 0, label: '怨念缠身', grade: 'art', cost: 1, inflict: { id: 'weak', stacks: 1, duration: 2 }, note: '给你虚弱' },
+      { type: 'attack', damage: 18, wuxing: 'huo', label: '抓挠', grade: 'base', cost: 0, note: '快速试探' },
+      { type: 'attack', damage: 18, wuxing: 'huo', label: '抓挠', grade: 'base', cost: 0, note: '快速试探' },
+      { type: 'buff', label: '躁意上涌', grade: 'art', cost: 1, selfCharge: 1, note: '自身蓄势 +1' },
+      { type: 'attack', damage: 27, wuxing: 'huo', label: '怒咬', grade: 'dire', cost: 2, note: '消耗势，重击' },
+      { type: 'debuff', label: '怨念缠身', grade: 'art', cost: 1, inflict: { id: 'weak', stacks: 1, duration: 2 }, note: '给你虚弱' },
     ],
   },
   {
@@ -72,11 +72,13 @@ export const ENEMIES: Enemy[] = [
     chargeStacks: 0, shi: 0, shiCap: 4,
     lore: '连续三个月凌晨两点下班的人留下的东西，已经不记得自己叫什么，只记得还要交东西。',
     intents: [
-      { type: 'guard', mul: 0, label: '僵坐', grade: 'base', cost: 0, selfShield: 24, note: '获得护盾' },
-      { type: 'attack', mul: 1.2, damage: 22, wuxing: 'tu', label: '重压', grade: 'art', cost: 1, note: '厚土之击' },
-      { type: 'attack', mul: 0.8, damage: 14, wuxing: 'tu', label: '絮叨', grade: 'base', cost: 0, note: '连续骚扰' },
-      { type: 'debuff', mul: 0, label: '夺炁', grade: 'art', cost: 1, note: '抽走你的炁' },
-      { type: 'aoe', mul: 1.1, damage: 20, wuxing: 'tu', label: '全屋熄灯', grade: 'dire', cost: 3, note: '蓄势后的大范围' },
+      { type: 'guard', label: '僵坐', grade: 'base', cost: 0, selfShield: 24, note: '获得护盾' },
+      { type: 'attack', damage: 22, wuxing: 'tu', label: '重压', grade: 'art', cost: 1, note: '厚土之击' },
+      { type: 'attack', damage: 14, wuxing: 'tu', label: '絮叨', grade: 'base', cost: 0, note: '连续骚扰' },
+      // 「夺炁」必须真的夺走东西：直接抽走玩家的阳炁 / 阴炁（qiDrain），
+      // 而不是过去那种「没写 inflict → 无扣炁、无日志、无状态」的空壳出招。
+      { type: 'debuff', label: '夺炁', grade: 'art', cost: 1, qiDrain: { yang: 2, yin: 2 }, note: '抽走你 2 阳炁 2 阴炁' },
+      { type: 'aoe', damage: 20, wuxing: 'tu', label: '全屋熄灯', grade: 'dire', cost: 3, note: '蓄势后的大范围' },
     ],
   },
   {
@@ -86,11 +88,13 @@ export const ENEMIES: Enemy[] = [
     chargeStacks: 0, shi: 0, shiCap: 4,
     lore: '直播间里那句「最后三单」孵化出来的虫，永远填不饱，永远在结茧。',
     intents: [
-      { type: 'attack', mul: 0.9, damage: 18, wuxing: 'mu', label: '啃噬', grade: 'base', cost: 0, note: '吸取生机' },
-      { type: 'attack', mul: 0.9, damage: 18, wuxing: 'mu', label: '啃噬', grade: 'base', cost: 0, note: '吸取生机' },
-      { type: 'aoe', mul: 0.7, damage: 14, wuxing: 'mu', label: '虫群', grade: 'art', cost: 1, note: '数量压制' },
-      { type: 'buff', mul: 0, label: '结茧', grade: 'art', cost: 1, selfCharge: 2, note: '蓄势 +2，为化蝶' },
-      { type: 'attack', mul: 1.8, damage: 34, wuxing: 'mu', label: '化蝶噬心', grade: 'kill', cost: 3, note: '倾泻全部蓄势' },
+      // 【文案对齐实现】引擎中没有任何敌人吸血/回血机制，「吸取生机」是一句无落点的承诺，
+      // 故改为中性的动作描述「撕咬」。
+      { type: 'attack', damage: 18, wuxing: 'mu', label: '啃噬', grade: 'base', cost: 0, note: '撕咬' },
+      { type: 'attack', damage: 18, wuxing: 'mu', label: '啃噬', grade: 'base', cost: 0, note: '撕咬' },
+      { type: 'aoe', damage: 14, wuxing: 'mu', label: '虫群', grade: 'art', cost: 1, note: '数量压制' },
+      { type: 'buff', label: '结茧', grade: 'art', cost: 1, selfCharge: 2, note: '蓄势 +2，为化蝶' },
+      { type: 'attack', damage: 34, wuxing: 'mu', label: '化蝶噬心', grade: 'kill', cost: 3, note: '倾泻全部蓄势' },
     ],
   },
 
@@ -102,11 +106,11 @@ export const ENEMIES: Enemy[] = [
     chargeStacks: 0, shi: 0, shiCap: 4,
     lore: '长安城旧日巡夜的金甲卫士，香火散了，甲胄还亮。它不害人，只认「规矩」——但它的规矩很硬。',
     intents: [
-      { type: 'guard', mul: 0, label: '立盾', grade: 'base', cost: 0, selfShield: 28, note: '金甲格挡' },
-      { type: 'attack', mul: 1.1, damage: 22, wuxing: 'jin', label: '横刀', grade: 'art', cost: 1, note: '军阵刀法' },
-      { type: 'attack', mul: 1.1, damage: 22, wuxing: 'jin', label: '横刀', grade: 'art', cost: 1, note: '军阵刀法' },
-      { type: 'attack', mul: 2.0, damage: 40, wuxing: 'jin', label: '金吾大辟', grade: 'kill', cost: 3, note: '斩妖之刑' },
-      { type: 'debuff', mul: 0, label: '锁链缠足', grade: 'art', cost: 1, inflict: { id: 'silence', stacks: 1, duration: 1 }, note: '封你术法' },
+      { type: 'guard', label: '立盾', grade: 'base', cost: 0, selfShield: 28, note: '金甲格挡' },
+      { type: 'attack', damage: 22, wuxing: 'jin', label: '横刀', grade: 'art', cost: 1, note: '军阵刀法' },
+      { type: 'attack', damage: 22, wuxing: 'jin', label: '横刀', grade: 'art', cost: 1, note: '军阵刀法' },
+      { type: 'attack', damage: 40, wuxing: 'jin', label: '金吾大辟', grade: 'kill', cost: 3, note: '斩妖之刑' },
+      { type: 'debuff', label: '锁链缠足', grade: 'art', cost: 1, inflict: { id: 'silence', stacks: 1, duration: 1 }, note: '封你术法' },
     ],
   },
   {
@@ -116,11 +120,11 @@ export const ENEMIES: Enemy[] = [
     chargeStacks: 0, shi: 0, shiCap: 5,
     lore: '第一声春雷震落的那头兽。它不是妖，是被节令催生的瑞兽——角上缠着尚未化尽的冬寒，眼里全是新生的绿。',
     intents: [
-      { type: 'buff', mul: 0, label: '引雷', grade: 'art', cost: 1, selfCharge: 2, note: '引雷入角，蓄势 +2' },
-      { type: 'attack', mul: 1.6, damage: 42, wuxing: 'mu', label: '春雷落', grade: 'dire', cost: 2, note: '雷击单点' },
-      { type: 'aoe', mul: 1.1, damage: 28, wuxing: 'mu', label: '雷震四方', grade: 'art', cost: 1, note: '范围雷爆' },
-      { type: 'guard', mul: 0, label: '盘角', grade: 'base', cost: 0, selfShield: 40, note: '兽角结阵' },
-      { type: 'attack', mul: 2.4, damage: 62, wuxing: 'mu', label: '万雷归一', grade: 'kill', cost: 4, note: '倾泻全部蓄势' },
+      { type: 'buff', label: '引雷', grade: 'art', cost: 1, selfCharge: 2, note: '引雷入角，蓄势 +2' },
+      { type: 'attack', damage: 42, wuxing: 'mu', label: '春雷落', grade: 'dire', cost: 2, note: '雷击单点' },
+      { type: 'aoe', damage: 28, wuxing: 'mu', label: '雷震四方', grade: 'art', cost: 1, note: '范围雷爆' },
+      { type: 'guard', label: '盘角', grade: 'base', cost: 0, selfShield: 40, note: '兽角结阵' },
+      { type: 'attack', damage: 62, wuxing: 'mu', label: '万雷归一', grade: 'kill', cost: 4, note: '倾泻全部蓄势' },
     ],
   },
   {
@@ -130,14 +134,14 @@ export const ENEMIES: Enemy[] = [
     chargeStacks: 0, shi: 0, shiCap: 5,
     lore: '凝在华灯上的最后一层白霜，是霜降那日天地收摄的灵气化的形。美得让人忘记害怕——被它盯上的人，会忘记自己为什么出门。',
     intents: [
-      { type: 'attack', mul: 1.4, damage: 38, wuxing: 'shui', label: '冰锥', grade: 'base', cost: 0, note: '快速霜刺' },
-      { type: 'guard', mul: 0, label: '凝霜', grade: 'base', cost: 0, selfShield: 46, note: '霜甲加身' },
-      { type: 'aoe', mul: 1.3, damage: 36, wuxing: 'shui', label: '霜噬', grade: 'dire', cost: 2, note: '寒潮铺场' },
-      { type: 'debuff', mul: 0, label: '忘川低语', grade: 'art', cost: 1, inflict: { id: 'weak', stacks: 2, duration: 2 }, note: '夺你心志' },
-      { type: 'attack', mul: 2.6, damage: 72, wuxing: 'shui', label: '绝息·冰封', grade: 'kill', cost: 4, note: '霜降绝杀' },
+      { type: 'attack', damage: 38, wuxing: 'shui', label: '冰锥', grade: 'base', cost: 0, note: '快速霜刺' },
+      { type: 'guard', label: '凝霜', grade: 'base', cost: 0, selfShield: 46, note: '霜甲加身' },
+      { type: 'aoe', damage: 36, wuxing: 'shui', label: '霜噬', grade: 'dire', cost: 2, note: '寒潮铺场' },
+      { type: 'debuff', label: '忘川低语', grade: 'art', cost: 1, inflict: { id: 'weak', stacks: 2, duration: 2 }, note: '夺你心志' },
+      { type: 'attack', damage: 72, wuxing: 'shui', label: '绝息·冰封', grade: 'kill', cost: 4, note: '霜降绝杀' },
     ],
   },
-];
+] satisfies readonly Enemy[];
 
 export const ENEMY_MAP: Record<string, Enemy> = Object.fromEntries(
   ENEMIES.map((e) => [e.id, e]),
@@ -145,7 +149,7 @@ export const ENEMY_MAP: Record<string, Enemy> = Object.fromEntries(
 
 /* ============================== 战役（4 场） ============================== */
 
-export const CAMPAIGNS: Campaign[] = [
+export const CAMPAIGNS = [
   {
     id: 'camp_1', order: 1, name: '第一战 · 烟火长安',
     desc: '华灯初上，金吾卫巡过街市——它认得你手里的兵刃，「规矩」不许你带着杀意过市。',
@@ -166,5 +170,5 @@ export const CAMPAIGNS: Campaign[] = [
     desc: '冬与春在同一天撞上。雷在左，霜在右，天地正炁与节令之灵一并压来——此谓「考试」。',
     enemyIds: ['enemy_chunlei', 'enemy_bingyan', 'enemy_jiaban'],
   },
-];
+] satisfies readonly Campaign[];
 

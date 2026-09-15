@@ -23,7 +23,10 @@ import {
   COUNTER_MUL,
   DEFENSE_SOFTENING,
   DELING_MUL,
+  FAXIU_SHENG_DMG_STEP,
   FAXIU_SHENG_MUL,
+  FROST_DEF_PENALTY_CAP,
+  FROST_DEF_PENALTY_PER_STACK,
   JIANZOU_MUL,
   KAITIAN_MUL,
   PARRY_COUNTER_MUL,
@@ -73,13 +76,18 @@ export function getEffectiveAtk(state: BattleState): AtkBreakdown {
 }
 
 export function getQiCap(state: BattleState): { yang: number; yin: number } {
-  let cap = QI_CAP_BASE;
+  let yang = QI_CAP_BASE;
+  let yin = QI_CAP_BASE;
   for (const id of state.equipment) {
     if (!id) continue;
     const eq = EQUIPMENT_MAP[id];
-    if (eq?.kind === 'artifact') cap += eq.qiCapBonus;
+    if (eq?.kind !== 'artifact') continue;
+    // 按 qiCapSide 分别累加 —— 离火镜只加阳炁、坎水佩只加阴炁、五雷令只加阳炁。
+    // 历史上这里把同一个 qiCapBonus 同时给两条脉，等于「阳炁上限 +4」的文案是假的。
+    if (eq.qiCapSide === 'yang' || eq.qiCapSide === 'both') yang += eq.qiCapBonus;
+    if (eq.qiCapSide === 'yin' || eq.qiCapSide === 'both') yin += eq.qiCapBonus;
   }
-  return { yang: cap, yin: cap };
+  return { yang, yin };
 }
 
 /** 连击段数 */
@@ -179,9 +187,14 @@ function stanceModifiers(state: BattleState, card: { kind: string; wuxing?: WuXi
   }
 
   if (state.stance === 'faxiu' && card?.wuxing && state.lastSpellWuxing) {
-    // 相生：木→火→土→金→水
+    // 相生：木→火→土→金→水。倍率 = 基础相生倍率 + 本回合相生连击数 × 每环 10%（P1-5）
     if (WU_XING_SHENG[state.lastSpellWuxing] === card.wuxing) {
-      mods.push({ op: 'mul', value: FAXIU_SHENG_MUL, sourceId: 'stance.faxiu', label: '五行相生' });
+      mods.push({
+        op: 'mul',
+        value: FAXIU_SHENG_MUL + state.faxiuChain * FAXIU_SHENG_DMG_STEP,
+        sourceId: 'stance.faxiu',
+        label: `五行相生 · ${state.faxiuChain + 1} 环`,
+      });
     }
   }
 
@@ -231,11 +244,17 @@ function counterModifier(card: { wuxing?: WuXing } | null, target: Combatant): D
   return [];
 }
 
-/** 目标防御态修正：破甲削防 / 月令土旺加防 —— 状态必须有实际效果，禁止「无响应」状态 */
+/** 目标防御态修正：破甲削防 / 霜寒破甲 / 月令土旺加防 —— 状态必须有实际效果，禁止「无响应」状态 */
 export function effectiveDefense(target: Combatant, defMul = 1): number {
   let def = Math.max(0, target.def) * defMul;
   const armorBreak = target.statuses.find((st) => st.id === 'armorBreak');
   if (armorBreak) def *= Math.max(0, 1 - armorBreak.stacks * 0.15);
+  // 霜寒破甲：每层 −12%，上限 −36%（乘在同一个 def 上，与 armorBreak 独立叠乘）
+  const frost = target.statuses.find((st) => st.id === 'frost');
+  if (frost) {
+    const penalty = Math.min(FROST_DEF_PENALTY_CAP, frost.stacks * FROST_DEF_PENALTY_PER_STACK);
+    def *= Math.max(0, 1 - penalty);
+  }
   return def;
 }
 
@@ -256,12 +275,24 @@ export function monthDefMul(state: BattleState): number {
   return LUNAR_MONTH_MAP[state.lunarMonthId]?.defMul ?? 1;
 }
 
-/** 攻击方虚弱修正：虚弱使本次伤害下降（每层 -15%，上限 -45%） */
-function attackerModifiers(attacker: Combatant): DamageModifier[] {
-  const weak = attacker.statuses.find((st) => st.id === 'weak');
-  if (!weak) return [];
+/**
+ * 虚弱倍率：每层 −15%，上限 −45%；无虚弱时返回 1。
+ *
+ * 【单一真源】玩家侧（resolveDamage 的 attackerModifiers）与敌人侧（battle.enemyAct）
+ * 都调用本函数 —— 过去 enemyAct 完全不读 weak，导致打给敌人的虚弱是「单向无效机制」。
+ */
+export function getWeakMul(c: Combatant): number {
+  const weak = c.statuses.find((st) => st.id === 'weak');
+  if (!weak) return 1;
   const penalty = Math.min(0.45, weak.stacks * 0.15);
-  return [{ op: 'mul', value: 1 - penalty, sourceId: 'status.weak', label: '虚弱' }];
+  return 1 - penalty;
+}
+
+/** 攻击方虚弱修正：虚弱使本次伤害下降（走 getWeakMul 单一真源） */
+function attackerModifiers(attacker: Combatant): DamageModifier[] {
+  const mul = getWeakMul(attacker);
+  if (mul === 1) return [];
+  return [{ op: 'mul', value: mul, sourceId: 'status.weak', label: '虚弱' }];
 }
 
 export function collectModifiers(ctx: DamageContext, target: Combatant): DamageModifier[] {

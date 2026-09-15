@@ -7,6 +7,7 @@ import type {
   BattleState,
   Card,
   DamageContext,
+  DamageDealtInfo,
   DamageNumber,
   Effect,
   Enemy,
@@ -19,13 +20,21 @@ import {
   DRAW_PER_TURN,
   EARLY_PARRY_REDUCE,
   ENEMY_SPACING,
+  FAXIU_SHENG_COST_MUL,
+  FROST_SLOW_COST_CAP,
+  FROST_SLOW_COST_PER_STACK,
   GUARD_SHIELD,
   ENEMY_ZONE_Y,
   FLAW_COMBO_THRESHOLD,
   FLAW_COUNTER_THRESHOLD,
   FLAW_DURATION,
   HAND_LIMIT,
+  HAND_DRAW_CAP,
+  HITSTOP_MAX_MS,
+  HITSTOP_MAX_MUL,
+  HITSTOP_MIN_MS,
   HITSTOP_WHEN_HURT_MS,
+  JIANZOU_SELF_DAMAGE_RATIO,
   PARALYZE_MISS_CAP,
   PARALYZE_MISS_PER_STACK,
   PARRY_COUNTER_MUL,
@@ -35,9 +44,14 @@ import {
   PLAYER_ZONE_Y,
   QISHA_COST_MUL,
   REGULATE_RATIO,
+  RELIC_QI_GAIN,
+  SANXIU_JIANZOU_THRESHOLD,
   SCREEN_CENTER_X,
   SHI_CAP,
   SHILING_COST_DELTA,
+  SUBSTITUTE_RATIO_DEFAULT,
+  TANCHEN_SHIELD_PER_CARD,
+  TANCHEN_STEAL_MIN,
   ULTIMATE_MUL,
   WUSHENG_KAITIAN_STACKS,
   ZHENGYIN_COST_MUL,
@@ -48,18 +62,29 @@ import { CHARACTER_MAP } from '../data/actors';
 import { ENEMY_MAP, CAMPAIGNS } from '../data/actors';
 import { LUNAR_MONTH_MAP, STANCES } from '../data/world';
 import { SHI_SHEN_MAP } from '../data/world';
-import { WU_XING_KE } from '../constants';
-import { applyDefense, getEffectiveAtk, getHits, getQiCap, monthDefMul, resolveDamage, resolveKaitian } from './damage';
+import { WU_XING_KE, WU_XING_SHENG } from '../constants';
+import {
+  applyDefense,
+  getEffectiveAtk,
+  getHits,
+  getQiCap,
+  getWeakMul,
+  getYinYangDiff,
+  monthDefMul,
+  resolveDamage,
+  resolveKaitian,
+} from './damage';
+import { assertNever } from './assertNever';
 import { chance, rand, shuffle } from './rng';
 import {
   fireBattleStart,
   fireCardPlayed,
   fireDamageDealt,
   fireModifyCardCost,
-  fireModifyHeal,
-  fireTurnEnd,
+  fireModifyHeal,  fireTurnEnd,
   fireTurnStart,
   getRegulateMul,
+  getStealDiscardShield,
   isForceParry,
 } from './hooks';
 
@@ -120,6 +145,12 @@ function hasStatus(c: { statuses: { id: StatusId }[] }, id: StatusId): boolean {
 function findCardIndex(s: BattleState, key: string): number {
   return s.hand.findIndex((c) => c.uid === key || c.id === key);
 }
+
+/**
+ * 每点伤害倍率对应的卡帧毫秒增量。
+ * 由卡帧区间常量推导（HITSTOP_* 是唯一数值来源），避免把 80 / 100 / 300 这类手感数字散落在逻辑里。
+ */
+const HITSTOP_MS_PER_MUL = (HITSTOP_MAX_MS - HITSTOP_MIN_MS) / (HITSTOP_MAX_MUL - 1);
 
 /* ============================== 创建战局 ============================== */
 
@@ -193,6 +224,8 @@ export function createBattleState(input: CreateBattleInput): BattleState {
     hand: [],
     deck,
     discard: [],
+    relicQuota: 0,
+    relicDiscarded: 0,
     solarTermId: input.solarTermId,
     lunarMonthId: input.lunarMonthId,
     regulated: false,
@@ -203,6 +236,7 @@ export function createBattleState(input: CreateBattleInput): BattleState {
     cardsPlayedThisTurn: 0,
     attackCardsThisTurn: 0,
     lastSpellWuxing: null,
+    faxiuChain: 0,
     comboThisTurn: 0,
     counterHitsThisTurn: 0,
     zhengyinUsed: false,
@@ -264,7 +298,8 @@ function drawCards(s: BattleState, count: number): void {
     }
     const card = s.deck.pop();
     if (!card) break;
-    if (s.hand.length >= HAND_LIMIT) {
+    // 抽牌用的是 HAND_DRAW_CAP 而非 HAND_LIMIT：留出「超限」空间给归墟阶段处理
+    if (s.hand.length >= HAND_DRAW_CAP) {
       s.discard.push(card);
       continue;
     }
@@ -302,11 +337,11 @@ export function cardCost(s: BattleState, card: Card): { yang: number; yin: numbe
     cost.yang += SHILING_COST_DELTA;
   }
 
-  // 法修相生：费用减半
+  // 法修相生：费用减半（比例走 FAXIU_SHENG_COST_MUL 常量；相生表统一用 constants 的 WU_XING_SHENG，
+  // 此前这里内联了一份重复的五行相生映射，是典型的「同一事实两处维护」）。
   if (s.stance === 'faxiu' && card.wuxing && s.lastSpellWuxing) {
-    const sheng: Record<string, string> = { mu: 'huo', huo: 'tu', tu: 'jin', jin: 'shui', shui: 'mu' };
-    if (sheng[s.lastSpellWuxing] === card.wuxing) {
-      cost = { yang: Math.ceil(cost.yang * 0.5), yin: Math.ceil(cost.yin * 0.5) };
+    if (WU_XING_SHENG[s.lastSpellWuxing] === card.wuxing) {
+      cost = { yang: Math.ceil(cost.yang * FAXIU_SHENG_COST_MUL), yin: Math.ceil(cost.yin * FAXIU_SHENG_COST_MUL) };
     }
   }
 
@@ -380,6 +415,7 @@ function startPlayerTurn(s: BattleState): BattleState {
   next.attackCardsThisTurn = 0;
   next.comboThisTurn = 0;
   next.counterHitsThisTurn = 0;
+  next.faxiuChain = 0;
   next.spentYangThisTurn = 0;
   next.spentYinThisTurn = 0;
   next.zhoutianActive = false;
@@ -388,6 +424,13 @@ function startPlayerTurn(s: BattleState): BattleState {
   next.stats.shishenTriggers['piancai_thisTurn'] = 0;
   next.stats.turnCount = next.turn;
   next.pendingNumbers = [];
+
+  // ⚠️ 刻意**不**在这里重置 zhengyinUsed（正印锁血标记）。
+  // 玩家受到的致命伤害只可能发生在敌方回合（enemyAct → applyDamageToPlayer），
+  // 而 ENEMY_ACT 分支紧接着就会调用 startPlayerTurn —— 若在此清掉，
+  // 「触发后消耗翻倍」会被立刻抹除、永远不可达，反而制造出一个新的「无响应机制」。
+  // 正确的清除时机在 finishPlayerTurn（玩家回合结束）末尾：语义为
+  // 敌方回合触发锁血 → 玩家接下来的那个回合消耗翻倍 → 该回合结束时归位。
 
   // 得令：每回合自动 +1 阳炁 +1 阴炁
   const char = CHARACTER_MAP[next.characterId];
@@ -422,12 +465,124 @@ function startPlayerTurn(s: BattleState): BattleState {
   return checkEnd(tickStatuses(after));
 }
 
+/**
+ * 结束玩家回合的**入口**。
+ *
+ * 若手牌超过 HAND_LIMIT，不直接交给敌方，而是先进入「归墟」阶段 ——
+ * 玩家必须亲自挑出多余的牌化掉，才会真正结算回合。
+ * 归墟只要求弃掉「超出上限」的那几张，**弃哪几张由玩家权衡**（这是策略点，
+ * 也是设计红线里「绝不无脑一键弃光」的落点）。
+ */
 function endPlayerTurn(s: BattleState): BattleState {
-  const next = clone(s);
-  next.phase = 'enemyTelegraph';
-  next.telegraphStartMs = null;
+  if (s.hand.length > HAND_LIMIT) {
+    const next = clone(s);
+    next.phase = 'relic';
+    next.relicQuota = s.hand.length - HAND_LIMIT;
+    next.relicDiscarded = 0;
+    pushLog(next, `手牌超出上限（${s.hand.length}/${HAND_LIMIT}），进入「归墟」——还需化去 ${next.relicQuota} 张`);
+    return next;
+  }
+  return finishPlayerTurn(s);
+}
 
+/**
+ * 归墟化炁规则 —— 「损有余而补不足」。
+ *
+ * - 弃 1 张**物理牌**（阳刚之形）→ 得 1 点**阴炁**
+ * - 弃 1 张**术法牌**（阴柔之术）→ 得 1 点**阳炁**
+ * - 弃 1 张**功能牌**（不阴不阳）→ 补**当前较少**的那一种炁（并列时补阳炁）
+ *
+ * 设计红线：弃牌绝不能是纯粹损失，否则玩家会强烈挫败 —— 所以每一张都必须换来实打实的炁。
+ */
+function relicQiOf(s: BattleState, card: Card): { yang: number; yin: number } {
+  if (card.kind === 'physical') return { yang: 0, yin: RELIC_QI_GAIN };
+  if (card.kind === 'spell') return { yang: RELIC_QI_GAIN, yin: 0 };
+  // 功能牌：哪边少补哪边
+  return s.yang <= s.yin ? { yang: RELIC_QI_GAIN, yin: 0 } : { yang: 0, yin: RELIC_QI_GAIN };
+}
+
+/** 归墟阶段弃置一张牌（cardKey 传手牌 uid） */
+function discardForRelic(s: BattleState, cardKey: string): BattleState {
+  if (s.phase !== 'relic') return s;
+  const idx = findCardIndex(s, cardKey);
+  if (idx < 0) return s;
+
+  const next = clone(s);
+  const card = next.hand[idx]!;
+  // 按「下标」删除：同名同 id 的牌有两份，按 id 过滤会误删
+  next.hand.splice(idx, 1);
+  next.discard.push(card);
+
+  const qi = relicQiOf(next, card);
+  next.yang = Math.min(next.yangCap, next.yang + qi.yang);
+  next.yin = Math.min(next.yinCap, next.yin + qi.yin);
+  next.relicQuota -= 1;
+  next.relicDiscarded += 1;
+
+  const gainCN = [
+    qi.yang > 0 ? `+${qi.yang} 阳炁` : '',
+    qi.yin > 0 ? `+${qi.yin} 阴炁` : '',
+  ].filter(Boolean).join('，');
+  // 结算成哪种炁就从实际结果反推，别用 kind 猜（功能牌是自适应的）
+  const intoCN = qi.yang > 0 ? '阳' : '阴';
+  pushLog(next, `归墟：「${card.name}」化为${intoCN}炁，${gainCN}`);
+
+  if (next.relicQuota <= 0) return finishRelic(next);
+  return next;
+}
+
+/**
+ * 归墟收尾：先让敌方「夺牌」，再把控制权交给敌方。
+ *
+ * 敌方夺牌是归墟的策略张力所在 —— 弃得越多，对手吃得越饱，
+ * 逼玩家权衡「手牌数量」与「喂饱敌人」之间的取舍。
+ * 两条夺牌来源：
+ *   1. 贪嗔蠹（真实存在的心猿，任何节气都可能遇到）
+ *   2. 节气 hook（寒露）—— 节气只能由 hooks.ts 读取，这里走 getStealDiscardShield
+ */
+function finishRelic(s: BattleState): BattleState {
+  const next = clone(s);
+  const discarded = next.relicDiscarded;
+
+  if (discarded >= TANCHEN_STEAL_MIN) {
+    for (const e of aliveEnemies(next)) {
+      if (e.id !== 'enemy_tanchen') continue;
+      const gain = discarded * TANCHEN_SHIELD_PER_CARD;
+      e.shield += gain;
+      pushLog(next, `${e.name} 吞食归墟弃牌，获得 ${gain} 点护盾`);
+    }
+  }
+
+  const perCard = getStealDiscardShield(next);
+  if (perCard > 0 && discarded > 0) {
+    for (const e of aliveEnemies(next)) {
+      const gain = discarded * perCard;
+      e.shield += gain;
+      pushLog(next, `寒露肃杀：${e.name} 夺取归墟弃牌，获得 ${gain} 点护盾`);
+    }
+  }
+
+  next.relicQuota = 0;
+  return finishPlayerTurn(next);
+}
+
+/** 真正的回合结算（原 endPlayerTurn 主体） */
+function finishPlayerTurn(s: BattleState): BattleState {
+  const next = clone(s);
+
+  /**
+   * 【顺序铁律】先触发 turnEnd 钩子并结算效果，**再**切换相位。
+   *
+   * 历史缺陷：旧代码先把 `phase` 置为 'enemyTelegraph' 才调用 fireTurnEnd，
+   * 而芒种的 onTurnEnd 判断 `ctx.state.phase === 'playerTurn'` → 恒假 →
+   * 该节气永远不扣血、永远不打日志（100% 空转）。现在保证钩子执行时相位仍是 'playerTurn'。
+   * 自检：全项目 onTurnEnd 只有芒种一处，且改后已不再依赖 phase。
+   */
   const after = applyEffects(next, fireTurnEnd(ctxOf(next)));
+
+  // （2）结算完成后再进入敌方前摇
+  after.phase = 'enemyTelegraph';
+  after.telegraphStartMs = null;
 
   // 破绽判定：本回合连击数或相克命中达标
   if (after.comboThisTurn >= FLAW_COMBO_THRESHOLD || after.counterHitsThisTurn >= FLAW_COUNTER_THRESHOLD) {
@@ -443,15 +598,21 @@ function endPlayerTurn(s: BattleState): BattleState {
     }
   }
 
-  // 剑走偏锋：回合结束自损 30% 当前血量
+  // 剑走偏锋：回合结束自损当前血量的固定比例（比例与差值上限均走常量，不留魔法数字）
   if (after.stance === 'sanxiu') {
-    const diff = Math.min(8, Math.abs(after.yang - after.yin));
-    if (diff >= 6) {
-      const self = Math.floor(after.player.hp * 0.3);
+    const diff = getYinYangDiff(after); // 已按 SANXIU_DIFF_CAP 夹顶
+    if (diff >= SANXIU_JIANZOU_THRESHOLD) {
+      const self = Math.floor(after.player.hp * JIANZOU_SELF_DAMAGE_RATIO);
       after.player.hp = Math.max(1, after.player.hp - self);
       pushLog(after, `剑走偏锋反噬，自损 ${self} 点气血`);
     }
   }
+
+  // 正印锁血标记必须**在这里**（玩家回合结束）清除，而不是 startPlayerTurn：
+  // 致命伤害只发生在敌方回合，其紧接的 startPlayerTurn 会立刻把它清掉，
+  // 导致「触发后消耗翻倍」永远不可达。放在回合结束则语义为：
+  // 敌方回合触发锁血 → 玩家接下来的那个回合消耗翻倍 → 该回合结束时归位。
+  after.zhengyinUsed = false;
 
   return after;
 }
@@ -482,14 +643,24 @@ function playCard(s: BattleState, cardKey: string, targetId?: string): BattleSta
   if (card.kind === 'spell' && hasStatus(s.player, 'silence')) return s;
 
   const cost = cardCost(s, card);
+  // 【历史缺陷｜消耗计数失真】此前这里按**名义成本**累加：
+  //   next.spentYangThisTurn += Math.min(cost.yang, next.yang + cost.yang);
+  // 它完全没有考虑「跨脉替代支付」—— 当阳炁全程为 0、靠阴炁替代支付时，
+  // 名义成本仍是 cost.yang > 0，于是 spentYangThisTurn 会一路涨到 3，
+  // 误触发「炁贯周天」（zhoutianActive = true），违反铁律 3「机制不该在条件不满足时启动」。
+  // 现在改为按「支付前后的实际差值」计：替代支付扣的是另一脉，这里就记为 0。
+  // beforeYang / beforeYin 必须取自**进入 playCard 时的 s**（支付前），
+  // 且此刻 s.yang / s.yin 尚未被本函数改动过（它们是只读入参）。
+  const beforeYang = s.yang;
+  const beforeYin = s.yin;
   const paid = tryPay(s, cost, substituteRatio(s));
   if (!paid) return s;
 
   const next = clone(s);
   next.yang = paid.yang;
   next.yin = paid.yin;
-  next.spentYangThisTurn += Math.min(cost.yang, next.yang + cost.yang);
-  next.spentYinThisTurn += Math.min(cost.yin, next.yin + cost.yin);
+  next.spentYangThisTurn += beforeYang - paid.yang;
+  next.spentYinThisTurn += beforeYin - paid.yin;
   next.hand.splice(idx, 1);
   next.discard.push(card);
   next.cardsPlayedThisTurn += 1;
@@ -583,7 +754,17 @@ function playCard(s: BattleState, cardKey: string, targetId?: string): BattleSta
     const blades = next.equipment.filter((id) => id && EQUIPMENT_MAP[id]?.kind === 'blade').length;
     if (blades >= 2) next.wushengStacks += 1;
   }
-  if (card.wuxing) next.lastSpellWuxing = card.wuxing;
+  // 法修·相生链维护。**必须在伤害结算之后**：dealCardDamage 会读取 state.faxiuChain
+  // 作为「当前是第几环」，若在结算前就自增，读到的是错误的环数。
+  if (card.wuxing) {
+    const prev = next.lastSpellWuxing;
+    if (next.stance === 'faxiu' && prev && WU_XING_SHENG[prev] === card.wuxing) {
+      next.faxiuChain += 1;
+    } else {
+      next.faxiuChain = 0;
+    }
+    next.lastSpellWuxing = card.wuxing;
+  }
 
   // 正财：造成伤害后 +1 阳 +1 阴
   if (!next.zhengcaiUsed && CHARACTER_MAP[next.characterId]?.shishen.includes('zhengcai') && card.mul > 0) {
@@ -634,7 +815,9 @@ function dealCardDamage(s: BattleState, card: Card, targetId?: string): void {
   const shishenHits = CHARACTER_MAP[s.characterId]?.shishen.includes('shishen') ?? false;
   const perHitMul = shishenHits ? 0.8 : 1;
 
-  let totalDealt = 0;
+  /** 逐次命中收集的事实快照：让 onDamageDealt 对「每个被打中的目标」单独响应 */
+  const hitsInfo: DamageDealtInfo[] = [];
+
   for (const t of targets) {
     const ctx: DamageContext = {
       attacker: s.player,
@@ -655,16 +838,36 @@ function dealCardDamage(s: BattleState, card: Card, targetId?: string): void {
     const perHit = bd.final;
     const total = perHit * hits;
     applyDamageToEnemy(s, t.id, total, card.wuxing ?? 'physical', bd.crit);
-    totalDealt += total;
+    hitsInfo.push({ amount: total, targetId: t.id, crit: bd.crit, isTrue: bd.isTrue });
 
     s.comboThisTurn += hits;
+
+    // 五行相克：命中计数
     if (card.wuxing && t.wuxing && WU_XING_KE[card.wuxing] === t.wuxing) {
       s.counterHitsThisTurn += 1;
     }
 
+    // 法修·相克：打断敌方蓄力 + 附加虚弱（与上面的相克命中计数是两件事，不重复计数）
+    if (s.stance === 'faxiu' && card.kind === 'spell' && card.wuxing && t.wuxing && WU_XING_KE[card.wuxing] === t.wuxing) {
+      const cur = s.enemies.find((x) => x.id === t.id);
+      if (cur) {
+        if (cur.chargeStacks > 0) {
+          pushLog(s, `五行相克：${cur.name} 蓄势被打断（清空 ${cur.chargeStacks} 层）`);
+          cur.chargeStacks = 0;
+        }
+        const ex = cur.statuses.find((st) => st.id === 'weak');
+        if (ex) ex.stacks += 1;
+        else cur.statuses.push({ id: 'weak', stacks: 1, duration: 2 });
+      }
+    }
+
+    // 卡帧时长：由 HITSTOP_MIN/MAX_MS 与 HITSTOP_MAX_MUL 推导并夹顶（不再写死 100/300/80）
     s.pendingHitstopMs = Math.max(
       s.pendingHitstopMs,
-      Math.min(300, 100 + Math.floor((bd.totalMul - 1) * 80)),
+      Math.min(
+        HITSTOP_MAX_MS,
+        Math.max(HITSTOP_MIN_MS, HITSTOP_MIN_MS + Math.floor((bd.totalMul - 1) * HITSTOP_MS_PER_MUL)),
+      ),
     );
 
     if (total > s.stats.maxSingleDamage) {
@@ -687,14 +890,24 @@ function dealCardDamage(s: BattleState, card: Card, targetId?: string): void {
       if (cur) cur.statuses.push({ ...combo.inflict, duration: combo.inflict.duration });
     }
     pushLog(s, `${combo.skillName}！附魔 ${enchantDmg} 点伤害`);
-    totalDealt += enchantDmg;
+    // 附魔段不是暴击命中的「主体」，crit 记 false（霜降不会因附魔而冻结）
+    hitsInfo.push({ amount: enchantDmg, targetId: targets[0]!.id, crit: false, isTrue: false });
   }
 
   s.stats.maxCombo = Math.max(s.stats.maxCombo, s.comboThisTurn);
   s.stats.maxCounterHits = Math.max(s.stats.maxCounterHits, s.counterHitsThisTurn);
 
-  // applyEffects 原地修改 s 并返回同一引用，无需接收返回值
-  applyEffects(s, fireDamageDealt(ctxOf(s), totalDealt));
+  // 逐次命中触发 onDamageDealt：多目标 / 多段攻击时，每个被打中的目标都能正确响应
+  // （霜降只冻结「被暴击命中的那个敌人」，白露只给「被命中的那个敌人」挂霜寒）。
+  //
+  // 【历史缺陷｜钩子看不到牌】此前这里用的是 `ctxOf(s)`，而 ctxOf 把 card 设成了 null ——
+  // 于是 onDamageDealt 无法判断「这是不是一张术法牌」，白露只能退而求其次挂在
+  // 「出牌即触发」的 onCardPlayed 上（既锁错目标，又会被 mul=0 的纯治疗牌误触发）。
+  // 现在构造一个**带 card 的 ctx** 再逐次触发，命中事实与牌面信息同时可见。
+  const hitCtx: DamageContext = { ...ctxOf(s), card };
+  for (const hit of hitsInfo) {
+    applyEffects(s, fireDamageDealt(hitCtx, hit));
+  }
 }
 
 function resolveTrueShi(s: BattleState): number {
@@ -763,7 +976,7 @@ function applyDamageToPlayer(s: BattleState, amount: number): void {
     s.zhengyinUsed = true;
     s.player.hp = 1;
     s.stats.shishenTriggers['zhengyin'] = (s.stats.shishenTriggers['zhengyin'] ?? 0) + 1;
-    pushLog(s, '正印·护命，气血锁定为 1（本回合消耗翻倍）');
+    pushLog(s, '正印·护命，气血锁定为 1（你接下来的那个回合消耗翻倍）');
     addNumber(s, s.player.id, 0, 'heal', false);
     return;
   }
@@ -861,85 +1074,121 @@ function enemyAct(s: BattleState): BattleState {
       }
     }
 
-    // 敌方「势」资源：不足则本回合只能「回气」，无法出招 —— 让敌人也有资源博弈
-    const cost = intent.cost ?? 0;
+    /**
+     * 敌方「势」资源：不足则本回合只能「回气」，无法出招 —— 让敌人也有资源博弈。
+     * 霜寒·减速：每层为招式增加 1 点「势」消耗（上限 +2）→ 出招更贵、更慢，
+     * 势不足时只能回气蓄势（已有的真实机制），所以「减速」有真实落点。
+     */
+    const frostStacks = e.statuses.find((st) => st.id === 'frost')?.stacks ?? 0;
+    const slow = Math.min(FROST_SLOW_COST_CAP, frostStacks * FROST_SLOW_COST_PER_STACK);
+    const cost = (intent.cost ?? 0) + slow;
     if (cost > 0 && e.shi < cost) {
       e.shi = Math.min(e.shiCap, e.shi + 1);
-      pushLog(next, `${e.name} 炁势未聚，回气蓄势（势 ${e.shi}/${e.shiCap}）`);
+      const slowTag = slow > 0 ? `（霜寒减速 +${slow}）` : '';
+      pushLog(next, `${e.name} 炁势未聚，回气蓄势（势 ${e.shi}/${e.shiCap}）${slowTag}`);
       continue;
     }
     if (cost > 0) e.shi -= cost;
 
-    if (intent.type === 'guard') {
-      const gain = intent.selfShield ?? GUARD_SHIELD;
-      e.shield += gain;
-      pushLog(next, `${e.name} 进入防御姿态，获得 ${gain} 点护盾`);
-      continue;
-    }
-
-    if (intent.type === 'buff') {
-      if (intent.selfCharge) {
-        e.chargeStacks += intent.selfCharge;
-        pushLog(next, `${e.name} 「${intent.label}」，蓄势 +${intent.selfCharge}（现 ${e.chargeStacks} 层）`);
+    switch (intent.type) {
+      case 'guard': {
+        const gain = intent.selfShield ?? GUARD_SHIELD;
+        e.shield += gain;
+        pushLog(next, `${e.name} 进入防御姿态，获得 ${gain} 点护盾`);
+        continue;
       }
-      if (intent.selfShield) {
-        e.shield += intent.selfShield;
-        pushLog(next, `${e.name} 「${intent.label}」，获得 ${intent.selfShield} 点护盾`);
+
+      case 'buff': {
+        if (intent.selfCharge) {
+          e.chargeStacks += intent.selfCharge;
+          pushLog(next, `${e.name} 「${intent.label}」，蓄势 +${intent.selfCharge}（现 ${e.chargeStacks} 层）`);
+        }
+        if (intent.selfShield) {
+          e.shield += intent.selfShield;
+          pushLog(next, `${e.name} 「${intent.label}」，获得 ${intent.selfShield} 点护盾`);
+        }
+        e.shi = Math.min(e.shiCap, e.shi + 1);
+        continue;
       }
-      e.shi = Math.min(e.shiCap, e.shi + 1);
-      continue;
-    }
 
-    if (intent.type === 'charge') {
-      e.chargeStacks += 1;
-      pushLog(next, `${e.name} 蓄势，下一击伤害 ×${1 + e.chargeStacks}`);
-      continue;
-    }
-
-    if (intent.type === 'debuff') {
-      if (intent.inflict) {
-        const ex = next.player.statuses.find((st) => st.id === intent.inflict!.id);
-        if (ex) ex.stacks += intent.inflict.stacks;
-        else next.player.statuses.push({ ...intent.inflict });
-        pushLog(next, `${e.name} 「${intent.label}」，你被施加了状态`);
+      case 'charge': {
+        e.chargeStacks += 1;
+        pushLog(next, `${e.name} 蓄势，下一击伤害 ×${1 + e.chargeStacks}`);
+        continue;
       }
-      e.shi = Math.min(e.shiCap, e.shi + 1);
-      continue;
-    }
 
-    // 攻击 / 群攻：蓄力层数在此结算（旧版 charge 只加 e.atk，而伤害走 intent.damage，等于空转）
-    const baseDamage = intent.damage ?? Math.floor(e.atk * intent.mul);
-    const raw = Math.floor(baseDamage * (1 + e.chargeStacks));
-    if (e.chargeStacks > 0) {
-      pushLog(next, `${e.name} 倾泻蓄势之力！`);
-      e.chargeStacks = 0;
-    }
-
-    // 弹反：intent.parryable === false 的招式无视弹反结果
-    const parryable = intent.parryable !== false;
-    let dmg = raw;
-    let parried = false;
-    if (parryable && parryBudget > 0) {
-      parryBudget -= 1;
-      parried = true;
-      if (next.parryResult === 'perfect') {
-        dmg = 0;
-      } else if (next.parryResult === 'early') {
-        dmg = Math.floor(dmg * EARLY_PARRY_REDUCE);
+      case 'debuff': {
+        if (intent.inflict) {
+          const ex = next.player.statuses.find((st) => st.id === intent.inflict!.id);
+          if (ex) ex.stacks += intent.inflict.stacks;
+          else next.player.statuses.push({ ...intent.inflict });
+          pushLog(next, `${e.name} 「${intent.label}」，你被施加了状态`);
+        }
+        // 「夺炁」：直接抽走玩家的阳炁 / 阴炁。用 Math.max(0, ...) 夹住，绝不为负；
+        // 日志必须如实反映**实际抽走**的量（玩家该脉为 0 就不谎称抽了 2）。
+        if (intent.qiDrain) {
+          const yangDrain = Math.min(next.yang, intent.qiDrain.yang ?? 0);
+          const yinDrain = Math.min(next.yin, intent.qiDrain.yin ?? 0);
+          next.yang -= yangDrain;
+          next.yin -= yinDrain;
+          // 【历史缺陷｜无意义日志】玩家双脉皆空时抽走量为 0，旧代码照样打印
+          // 「抽走你 0 阳炁 0 阴炁」—— 一条什么都没发生的日志会被误读成「机制生效了」。
+          // 现在只有在真的抽到东西（总量 > 0）时才打印原文，否则打印一条如实说明。
+          if (yangDrain + yinDrain > 0) {
+            pushLog(next, `${e.name} 使用「夺炁」，抽走你 ${yangDrain} 阳炁 ${yinDrain} 阴炁`);
+          } else {
+            pushLog(next, `${e.name} 使用「夺炁」，但你的炁已空，无从抽取`);
+          }
+        }
+        e.shi = Math.min(e.shiCap, e.shi + 1);
+        continue;
       }
-    }
 
-    if (dmg > 0) {
-      applyDamageToPlayer(next, dmg);
-      const suffix = parried && next.parryResult === 'early' ? '（已被格挡减免）' : '';
-      pushLog(next, `${e.name} 使用「${intent.label}」，造成 ${dmg} 点伤害${suffix}`);
-      if (intent.inflict) {
-        const ex = next.player.statuses.find((st) => st.id === intent.inflict!.id);
-        if (ex) ex.stacks += intent.inflict.stacks;
-        else next.player.statuses.push({ ...intent.inflict });
+      case 'attack':
+      case 'aoe': {
+        // 攻击 / 群攻：蓄力层数在此结算（旧版 charge 只加 e.atk，而伤害走 intent.damage，等于空转）
+        const baseDamage = intent.damage;
+        // 虚弱：攻击方伤害下降 —— 敌人也必须读到 weak，否则打给敌人的虚弱是单向无效机制
+        const weakMul = getWeakMul(e);
+        const raw = Math.floor(baseDamage * (1 + e.chargeStacks) * weakMul);
+        if (weakMul < 1) pushLog(next, `${e.name} 因虚弱，攻势受阻`);
+        if (e.chargeStacks > 0) {
+          pushLog(next, `${e.name} 倾泻蓄势之力！`);
+          e.chargeStacks = 0;
+        }
+
+        // 弹反：intent.parryable === false 的招式无视弹反结果
+        const parryable = intent.parryable !== false;
+        let dmg = raw;
+        let parried = false;
+        if (parryable && parryBudget > 0) {
+          parryBudget -= 1;
+          parried = true;
+          if (next.parryResult === 'perfect') {
+            dmg = 0;
+          } else if (next.parryResult === 'early') {
+            dmg = Math.floor(dmg * EARLY_PARRY_REDUCE);
+          }
+        }
+
+        if (dmg > 0) {
+          applyDamageToPlayer(next, dmg);
+          const suffix = parried && next.parryResult === 'early' ? '（已被格挡减免）' : '';
+          pushLog(next, `${e.name} 使用「${intent.label}」，造成 ${dmg} 点伤害${suffix}`);
+          if (intent.inflict) {
+            const ex = next.player.statuses.find((st) => st.id === intent.inflict!.id);
+            if (ex) ex.stacks += intent.inflict.stacks;
+            else next.player.statuses.push({ ...intent.inflict });
+          }
+        } else {
+          pushLog(next, `${e.name} 的「${intent.label}」被完全弹反`);
+        }
+        break;
       }
-    } else {
-      pushLog(next, `${e.name} 的「${intent.label}」被完全弹反`);
+
+      default:
+        // 新增一种意图类型却没写处理分支 → 这里编译失败（assertNever 收窄到 never）
+        return assertNever(intent, '敌人意图类型');
     }
   }
 
@@ -948,6 +1197,70 @@ function enemyAct(s: BattleState): BattleState {
 }
 
 /* ============================== 效果队列 ============================== */
+
+/** 单个效果的处理函数类型（按 kind 分派） */
+type EffectHandler<K extends Effect['kind']> = (s: BattleState, eff: Extract<Effect, { kind: K }>) => void;
+
+/**
+ * 效果处理器穷尽映射表。
+ *
+ * 用 `{ [K in Effect['kind']]: EffectHandler<K> }` 约束后，将来给 `Effect` 联合新增一种
+ * kind 却没有补 handler → `tsc -b` 直接报错。这比 switch + default 更硬：
+ * switch 容易被写成 `default: break` 而静默吞掉新类型。
+ *
+ * 语义与改造前的 switch 逐字一致（原地修改 s）。
+ */
+const EFFECT_HANDLERS: { [K in Effect['kind']]: EffectHandler<K> } = {
+  damage: (s, eff) => {
+    const t = aliveEnemies(s).find((e) => e.id === eff.targetId);
+    if (!t) return;
+    const atk = getEffectiveAtk(s);
+    const raw = Math.floor(atk.effectiveAtk * eff.mul);
+    const dmg = eff.isTrue ? raw : applyDefense(raw, t, monthDefMul(s));
+    applyDamageToEnemy(s, eff.targetId, dmg, eff.wuxing ?? 'physical');
+  },
+  flatDamage: (s, eff) => {
+    const t = aliveEnemies(s).find((e) => e.id === eff.targetId);
+    if (!t) return;
+    applyDamageToEnemy(s, eff.targetId, applyDefense(eff.amount, t, monthDefMul(s)), eff.wuxing ?? 'physical');
+  },
+  heal: (s, eff) => {
+    const amount = fireModifyHeal(s, eff.amount);
+    s.player.hp = Math.min(s.player.maxHp, s.player.hp + amount);
+    addNumber(s, s.player.id, amount, 'heal', false);
+  },
+  shield: (s, eff) => {
+    s.player.shield += Math.floor(fireModifyHeal(s, eff.amount) * monthDefMul(s));
+  },
+  gainQi: (s, eff) => {
+    if (eff.yang) s.yang = Math.min(s.yangCap, s.yang + eff.yang);
+    if (eff.yin) s.yin = Math.min(s.yinCap, s.yin + eff.yin);
+  },
+  draw: (s, eff) => {
+    drawCards(s, eff.count);
+  },
+  applyStatus: (s, eff) => {
+    const e = s.enemies.find((x) => x.id === eff.targetId);
+    if (!e) return;
+    const ex = e.statuses.find((st) => st.id === eff.status);
+    if (ex) ex.stacks += eff.stacks;
+    else e.statuses.push({ id: eff.status, stacks: eff.stacks, duration: eff.duration });
+  },
+  cleanse: (s) => {
+    s.player.statuses = [];
+  },
+  markFlaw: (s, eff) => {
+    const e = s.enemies.find((x) => x.id === eff.targetId);
+    if (e && !hasStatus(e, 'flaw')) e.statuses.push({ id: 'flaw', stacks: 1, duration: FLAW_DURATION });
+  },
+  selfDamage: (s, eff) => {
+    s.player.hp = Math.max(1, s.player.hp - eff.amount);
+    addNumber(s, s.player.id, eff.amount, 'physical', false);
+  },
+  log: (s, eff) => {
+    pushLog(s, eff.text);
+  },
+};
 
 /**
  * 效果队列结算（原地修改 s 并返回同一引用）。
@@ -959,62 +1272,9 @@ function applyEffects(s: BattleState, effects: Effect[]): BattleState {
   if (effects.length === 0) return s;
 
   for (const eff of effects) {
-    switch (eff.kind) {
-      case 'damage': {
-        const t = aliveEnemies(s).find((e) => e.id === eff.targetId);
-        if (!t) break;
-        const atk = getEffectiveAtk(s);
-        const raw = Math.floor(atk.effectiveAtk * eff.mul);
-        const dmg = eff.isTrue ? raw : applyDefense(raw, t, monthDefMul(s));
-        applyDamageToEnemy(s, eff.targetId, dmg, eff.wuxing ?? 'physical');
-        break;
-      }
-      case 'flatDamage': {
-        const t = aliveEnemies(s).find((e) => e.id === eff.targetId);
-        if (!t) break;
-        applyDamageToEnemy(s, eff.targetId, applyDefense(eff.amount, t, monthDefMul(s)), eff.wuxing ?? 'physical');
-        break;
-      }
-      case 'heal': {
-        const amount = fireModifyHeal(s, eff.amount);
-        s.player.hp = Math.min(s.player.maxHp, s.player.hp + amount);
-        addNumber(s, s.player.id, amount, 'heal', false);
-        break;
-      }
-      case 'shield':
-        s.player.shield += Math.floor(fireModifyHeal(s, eff.amount) * monthDefMul(s));
-        break;
-      case 'gainQi':
-        if (eff.yang) s.yang = Math.min(s.yangCap, s.yang + eff.yang);
-        if (eff.yin) s.yin = Math.min(s.yinCap, s.yin + eff.yin);
-        break;
-      case 'draw':
-        drawCards(s, eff.count);
-        break;
-      case 'applyStatus': {
-        const e = s.enemies.find((x) => x.id === eff.targetId);
-        if (!e) break;
-        const ex = e.statuses.find((st) => st.id === eff.status);
-        if (ex) ex.stacks += eff.stacks;
-        else e.statuses.push({ id: eff.status, stacks: eff.stacks, duration: eff.duration });
-        break;
-      }
-      case 'cleanse':
-        s.player.statuses = [];
-        break;
-      case 'markFlaw': {
-        const e = s.enemies.find((x) => x.id === eff.targetId);
-        if (e && !hasStatus(e, 'flaw')) e.statuses.push({ id: 'flaw', stacks: 1, duration: FLAW_DURATION });
-        break;
-      }
-      case 'selfDamage':
-        s.player.hp = Math.max(1, s.player.hp - eff.amount);
-        addNumber(s, s.player.id, eff.amount, 'physical', false);
-        break;
-      case 'log':
-        pushLog(s, eff.text);
-        break;
-    }
+    // 映射类型 + 联合收窄无法一步调用，这里用最小断言：按 kind 取到的就是该 kind 的处理器。
+    const handler = EFFECT_HANDLERS[eff.kind] as (s2: BattleState, e: Effect) => void;
+    handler(s, eff);
   }
 
   return s;
@@ -1121,27 +1381,118 @@ function doFuse(s: BattleState, cardAKey: string, cardBKey: string, targetId?: s
 
 /* ============================== 调息 / 架势 ============================== */
 
-function doRegulate(s: BattleState, from: QiType): BattleState {
-  if (s.regulated) return s;
-  const next = clone(s);
-  const mul = getRegulateMul(next);
-  const ratio = REGULATE_RATIO / mul;
+/**
+ * 调息结果 —— 引擎与 UI 共用的**唯一**判定结果。
+ *
+ * 【为什么要有这个类型：单一真源】
+ * 历史上「调息」是典型的**双真源**：
+ *   - 引擎 doRegulate 自己算一套（扣多少、给多少）；
+ *   - UI BattleScreen 又自己算一套（regRatio / regGain / canRegulate）。
+ * 两套算法只要有一处取整方式分家，界面就会开始骗人 ——
+ * 本轮把引擎的 `Math.floor` 改成 `Math.ceil` 时，UI 侧漏改，于是春分下
+ * 界面显示「换得 1 点」而引擎实际给 2 点。这类缺陷的根治办法不是「把 UI 也改成 ceil」
+ * （下次还会再漏），而是**把判定收敛到一个导出函数**，两边都只能问它。
+ *
+ * 【数值语义】
+ * - cost 由架势决定：体修 / 法修 2 点，散修 1 点（读 STANCES.substituteRatio）。
+ * - gain = clamp(ceil(cost × mul / R), 1, cost)，其中 R = SUBSTITUTE_RATIO_DEFAULT（基准兑换比例 2）。
+ *   即：**效率倍率作用在兑换比例上，且收益永不超过成本**。
+ *   这条夹顶同时堵住两个历史漏洞：
+ *     1. 「倒赚」—— 旧引擎的收益是 `Math.max(1, Math.ceil(mul))`，**与成本无关**：
+ *        散修（cost=1）+ 春分（mul=1.5）→ ceil(1.5)=2，即 1 阳炁换 2 阴炁，
+ *        凭空多出 1 点炁（违反铁律 4「无代价转换禁止」）。夹顶到 cost 后为 1:1，倒赚消失。
+ *     2. 「净亏」—— 目标一脉已满时若仍执行，会扣掉源炁却一点也加不上去，故 canDo=false。
+ * - 最后 gain 再按**目标剩余容量**夹顶：gain = min(gain, targetCap − targetCur)（仅当目标未满）。
+ *   即「UI 显示即实得」—— 目标差 1 点满时界面不再高报 2 点（见函数内 F2 注释）。
+ */
+export interface RegulateOutcome {
+  /** 本次调息是否可执行 */
+  canDo: boolean;
+  /** 需要扣掉的点数 */
+  cost: number;
+  /** 能得到的点数 */
+  gain: number;
+  /** 不可执行的原因（供 UI 提示） */
+  reason: 'ok' | 'used' | 'insufficient' | 'targetFull';
+}
 
-  if (from === 'yang' && next.yang >= REGULATE_RATIO) {
-    const spend = REGULATE_RATIO;
-    const gain = Math.floor(Math.max(1, REGULATE_RATIO / ratio));
-    next.yang -= spend;
-    next.yin = Math.min(next.yinCap, next.yin + gain);
-    pushLog(next, `调息：${spend} 阳炁 → ${gain} 阴炁`);
-    next.regulated = true;
-  } else if (from === 'yin' && next.yin >= REGULATE_RATIO) {
-    const spend = REGULATE_RATIO;
-    const gain = Math.floor(Math.max(1, REGULATE_RATIO / ratio));
-    next.yin -= spend;
-    next.yang = Math.min(next.yangCap, next.yang + gain);
-    pushLog(next, `调息：${spend} 阴炁 → ${gain} 阳炁`);
-    next.regulated = true;
+/**
+ * 调息判定 —— 引擎（doRegulate）与 UI（BattleScreen 的按钮文案 / 可用性）都只能通过它
+ * 来决定「能不能转、扣多少、给多少」。**不允许任何一处再自算一套。**
+ */
+export function regulateOutcome(s: BattleState, from: QiType): RegulateOutcome {
+  /** 扣费点数由架势决定：体修/法修 2 点，散修 1 点 */
+  const cost = STANCES.find((x) => x.id === s.stance)?.substituteRatio ?? REGULATE_RATIO;
+  const mul = getRegulateMul(s);
+  /**
+   * 收益基线上界：效率倍率作用在**兑换比例**上，且夹顶到 [1, cost]。
+   * - 基准（mul=1）cost=2 → ceil(2×1/2)=1（与旧行为一致）
+   * - 散修（cost=1）基准 → ceil(1×1/2)=1（1:1，与架势文案一致）
+   * - 体修/法修（cost=2）+ 春分（mul=1.5）→ ceil(2×1.5/2)=2（春分的效率提升真正落地）
+   * - 散修（cost=1）+ 春分 → clamp(ceil(1×1.5/2)=1, 1, 1)=1（**不倒赚**：1 阳炁换 1 阴炁）
+   * 用 ceil 而非 floor：floor(1.5)=1 会把春分的「效率提升」抹平成一句空话（历史受害者）。
+   *
+   * 【前瞻守卫｜不要删】`Math.min(cost, …)` 这个上界在当前已实装节气下**恒不触发**（QA 称其
+   * 「死守卫」）：现有节气 regulateMul 最大 1.5，cost=2 → ceil(2×1.5/2)=2=cost、
+   * cost=1 → ceil(1×1.5/2)=1=cost，故 min 从不收紧结果。**但它必须保留**：这是给未来高倍率
+   * 节气的前瞻防御 —— 若某节气给 mul=3，ceil(2×3/2)=3 > cost=2，无此界就会「倒赚」
+   * （1 阳炁换 3 阴炁，违反铁律 4）。**未来新增高倍率节气时，也请勿移除它。**
+   */
+  const rawGain = Math.max(1, Math.min(cost, Math.ceil((cost * mul) / SUBSTITUTE_RATIO_DEFAULT)));
+
+  // 原因判定优先级不变：used → insufficient → targetFull（前者命中即提前返回，后者不被新逻辑吃掉）
+  if (s.regulated) return { canDo: false, cost, gain: rawGain, reason: 'used' };
+  const src = from === 'yang' ? s.yang : s.yin;
+  if (src < cost) return { canDo: false, cost, gain: rawGain, reason: 'insufficient' };
+  // 目标炁已满时不允许执行 —— 否则就是「净亏」：扣了源炁却一点也加不上去。
+  const targetCur = from === 'yang' ? s.yin : s.yang;
+  const targetCap = from === 'yang' ? s.yinCap : s.yangCap;
+  if (targetCur >= targetCap) return { canDo: false, cost, gain: rawGain, reason: 'targetFull' };
+
+  /**
+   * 【剩余容量夹顶｜UI 显示即实得】—— F2 回炉修复
+   * 历史病根（与「① UI floor vs 引擎 ceil」同源）：界面**自己算**，算出个与引擎不一致的数。
+   *   - 旧病根 A：UI 用 floor、引擎用 ceil → 春分下界面显示「换得 1 点」而引擎给 2 点；
+   *   - 旧病根 B（本轮残留）：上面修了取整方式，却漏了「剩余容量」—— 目标差 1 点满时
+   *     UI 仍按 gain=2 显示「换得 2 点阴炁」，引擎却只加得进 1 点 → UI **高报 1 点**。
+   * 根治办法同前：把「目标剩余容量」也收进这条单一真源，界面能拿到的就只有引擎实得的数。
+   * 不变量：此处已确认 targetCur < targetCap（targetFull 分支已在上面提前返回），
+   *   故 targetCap − targetCur ≥ 1，夹顶后 gain ∈ [1, rawGain]，**绝不会夹出 0**。
+   * 与 doRegulate 同源：那边 `Math.min(cap, cur + gain)` 在本夹顶后成为恒真的防御性冗余，
+   *   不构成「第二套夹法」；两处一致，故无需（也不应）再改 doRegulate。
+   */
+  const gain = Math.min(rawGain, targetCap - targetCur);
+
+  return { canDo: true, cost, gain, reason: 'ok' };
+}
+
+/**
+ * 调息（阴阳逆转）：把较多的那种炁按架势比例转成另一种。
+ *
+ * 【历史 Bug 1｜静默失效】旧代码写死 `source >= REGULATE_RATIO(2)` 才执行，
+ * 于是「阳炁 0 / 阴炁 1」时两个分支都不进入 —— 不改 state、不置 regulated、
+ * 也不报错。按钮看起来能点，点下去毫无反应。
+ * 现在「能否转换」统一由 regulateOutcome 判定，UI 侧据此禁用按钮。
+ *
+ * 【历史 Bug 2｜数据与引擎不符】散修的 `substituteRatio` 是 1（界面 Tip 也照此显示
+ * 「按 1 : 1 转换」），但旧代码一律按 REGULATE_RATIO(2) 扣费 —— 界面在骗人。
+ * 现在改为**按架势读取扣费点数**（regulateOutcome 内），散修才真正做到 1:1。
+ */
+function doRegulate(s: BattleState, from: QiType): BattleState {
+  const outcome = regulateOutcome(s, from);
+  if (!outcome.canDo) return s;
+
+  const next = clone(s);
+  if (from === 'yang') {
+    next.yang -= outcome.cost;
+    next.yin = Math.min(next.yinCap, next.yin + outcome.gain);
+    pushLog(next, `调息：${outcome.cost} 阳炁 → ${outcome.gain} 阴炁`);
+  } else {
+    next.yin -= outcome.cost;
+    next.yang = Math.min(next.yangCap, next.yang + outcome.gain);
+    pushLog(next, `调息：${outcome.cost} 阴炁 → ${outcome.gain} 阳炁`);
   }
+  next.regulated = true;
   return next;
 }
 
@@ -1165,6 +1516,8 @@ export type BattleAction =
   | { type: 'REGULATE'; from: QiType }
   | { type: 'SWITCH_STANCE'; stance: StanceId }
   | { type: 'END_TURN' }
+  /** 归墟阶段：弃置一张手牌，换回另一种炁（cardId 传手牌 uid） */
+  | { type: 'DISCARD_CARD'; cardId: string }
   | { type: 'PARRY'; elapsedMs: number }
   | { type: 'ENEMY_ACT' }
   | { type: 'CONSUME_FX' };
@@ -1193,6 +1546,9 @@ export function battleReducer(state: BattleState, action: BattleAction): BattleS
     case 'END_TURN':
       if (state.phase !== 'playerTurn') return state;
       return endPlayerTurn(state);
+
+    case 'DISCARD_CARD':
+      return discardForRelic(state, action.cardId);
 
     case 'PARRY':
       if (state.phase !== 'enemyTelegraph' || state.parried) return state;

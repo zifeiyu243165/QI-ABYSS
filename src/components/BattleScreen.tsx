@@ -20,7 +20,7 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import type { BattleAction } from '../game/engine/battle';
-import { canFuse, canPlayCard, cardCost } from '../game/engine/battle';
+import { canFuse, canPlayCard, cardCost, regulateOutcome } from '../game/engine/battle';
 import type { BattleState, Card, StanceId } from '../game/types';
 import { CHARACTER_MAP } from '../game/data/actors';
 import { LUNAR_MONTH_MAP, SOLAR_TERM_MAP, STANCES } from '../game/data/world';
@@ -31,9 +31,17 @@ import { CharacterFigure, EnemyFigure } from './svg/Figure';
 import { BaguaPlatform, StatusGlyph, WuXingGlyph, WuXingSeal, STATUS_CN, WX_STROKE } from './svg/Glyphs';
 import { JadeButton, FlowBar } from './ui/Primitives';
 import { Tip, STATUS_TIP, WUXING_TIP } from './ui/Tip';
+import { RelicPhase } from './RelicPhase';
+import type { DiscardFlow } from './RelicPhase';
+import { playSfx } from '../game/audio';
 import type { FxHandle } from './fx/Effects';
 
 const BASE = import.meta.env.BASE_URL;
+
+/** 阴阳炁条在屏幕上的大致位置：归墟流光一律飞向这里（与 CSS 变量 --dx/--dy 配合） */
+const QI_BAR_TARGET = { x: 292, y: 386 };
+/** 归墟流光飞行时长，必须与 global.css 的 relicFlow 动画时长一致 */
+const RELIC_FLOW_MS = 700;
 
 /** 敌方区三段定高（意图卡 / 立绘盒 / 信息板）—— 三个敌人共用，保证横向对齐 */
 const INTENT_H = 48;
@@ -72,8 +80,50 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
   const [hurt, setHurt] = useState(0);
   const [warn, setWarn] = useState('');
   const [showHint, setShowHint] = useState(true);
-  const [endArmed, setEndArmed] = useState(false);
+  /** 架势预选：点击架势只改这里，必须再按「确认」才真正下发 SWITCH_STANCE */
+  const [pendingStance, setPendingStance] = useState<StanceId | null>(null);
+  /** 「大量归墟」金色水墨莲花演出（key 用于重复触发时重放入场动画） */
+  const [lotus, setLotus] = useState<{ key: number; yang: boolean } | null>(null);
+  const lotusSeq = useRef(0);
+  /** 归墟流光 / 弃牌残影：必须由本组件持有 —— 归墟面板化完最后一张就卸载了 */
+  const [relicFlows, setRelicFlows] = useState<
+    { id: number; x: number; y: number; dx: number; dy: number; yang: boolean }[]
+  >([]);
+  const [relicGhosts, setRelicGhosts] = useState<{ id: number; name: string; yang: boolean }[]>([]);
+  const relicSeq = useRef(0);
   const fxConsumed = useRef<string>('');
+
+  /**
+   * 归墟化去一张牌：生成飞向阴阳炁条的流光。
+   *
+   * 流光**不能**挂在归墟面板里 —— 面板在化完最后一张的瞬间随 phase 切换而卸载，
+   * 动画会被硬生生切断（实测流光元素数为 0，等于这个演出从来没播过）。
+   */
+  const handleRelicDiscard = useCallback((flow: DiscardFlow) => {
+    const id = ++relicSeq.current;
+    const dx = QI_BAR_TARGET.x - flow.origin.x;
+    const dy = QI_BAR_TARGET.y - flow.origin.y;
+    setRelicFlows((f) => [...f, { id, x: flow.origin.x, y: flow.origin.y, dx, dy, yang: flow.yang }]);
+    // 残影：对手也看得到你弃了什么（留牌的心理战）
+    setRelicGhosts((g) => [...g, { id, name: flow.name, yang: flow.yang }]);
+    window.setTimeout(() => {
+      setRelicFlows((f) => f.filter((v) => v.id !== id));
+      setRelicGhosts((g) => g.filter((v) => v.id !== id));
+    }, RELIC_FLOW_MS + 1700);
+  }, []);
+
+  /** 归墟一次化去足够多 → 绽放莲花。归墟面板卸载后这层仍在，所以演出不会被切断 */
+  const handleRelicBurst = useCallback((_discarded: number, yang: boolean) => {
+    playSfx('lotus');
+    const key = ++lotusSeq.current;
+    setLotus({ key, yang });
+    window.setTimeout(() => setLotus((cur) => (cur?.key === key ? null : cur)), 1600);
+  }, []);
+
+  /* 回合推进后清掉架势预选，避免上一回合的选择残留到新回合 */
+  useEffect(() => {
+    setPendingStance(null);
+  }, [state.turn]);
 
   const aliveEnemies = state.enemies.filter((e) => e.hp > 0);
   const targetId = selectedTarget ?? aliveEnemies[0]?.id ?? null;
@@ -117,13 +167,6 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
     const t = window.setTimeout(() => setWarn(''), 1600);
     return () => window.clearTimeout(t);
   }, [warn]);
-
-  /* ---------- 「结束回合」二次确认自动解除 ---------- */
-  useEffect(() => {
-    if (!endArmed) return;
-    const t = window.setTimeout(() => setEndArmed(false), 2600);
-    return () => window.clearTimeout(t);
-  }, [endArmed]);
 
   /* ---------- 敌方前摇：CSS 动画驱动 ---------- */
   const telegraphStartRef = useRef(0);
@@ -296,8 +339,28 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
   const isTelegraph = state.phase === 'enemyTelegraph';
   const combo = findCombo(state.equipment[0], state.equipment[1]) ?? findCombo(state.equipment[1], state.equipment[0]);
   const bladeCount = state.equipment.filter((id) => id && EQUIPMENT_MAP[id]?.kind === 'blade').length;
-  /** 当前架势的「阴阳逆转」兑换比（体修/法修为 2:1，散修为 1:1） */
-  const regRatio = STANCES.find((s) => s.id === state.stance)?.substituteRatio ?? 2;
+  /**
+   * 转换方向：从较多的那种炁扣（并列时扣阳炁，与引擎语义一致）。
+   *
+   * 【单一真源】调息的一切判定（能不能转、扣多少、给多少、为什么不能）**全部**来自引擎的
+   * regulateOutcome —— UI 不再自算一套。
+   * 历史缺陷：这里曾是双真源（引擎算一套、UI 算一套），本轮把引擎的 floor 改成 ceil 时
+   * UI 侧漏改，于是春分下界面显示「换得 1 点」而引擎实际给 2 点 —— 界面在骗玩家。
+   * 根治办法就是让两边都只能问同一个函数。
+   */
+  const regFrom: 'yang' | 'yin' = state.yang >= state.yin ? 'yang' : 'yin';
+  const regOutcome = regulateOutcome(state, regFrom);
+  const regRatio = regOutcome.cost;
+  const regGain = regOutcome.gain;
+  /** 引擎侧还额外要求「非敌方前摇」，UI 一并纳入可用性判断 */
+  const canRegulate = regOutcome.canDo && !isTelegraph;
+  const regFromCN = regFrom === 'yang' ? '阳炁' : '阴炁';
+  const regToCN = regFrom === 'yang' ? '阴炁' : '阳炁';
+  /** 不可用的原因文案：由引擎给出的 reason 驱动，界面不再自己猜 */
+  const regDisabledTip =
+    regOutcome.reason === 'targetFull'
+      ? `${regToCN}已满，无法再转换。`
+      : `${regFromCN}不足 ${regOutcome.cost} 点，无法转换。`;
 
   const selectedCard =
     selectedCards.length === 1 ? state.hand.find((c) => (c.uid ?? c.id) === selectedCards[0]) : undefined;
@@ -588,17 +651,22 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
       >
         {STANCES.map((s) => {
           const active = state.stance === s.id;
-          const disabled = state.stanceSwitched && !active;
+          const pending = pendingStance === s.id;
           return (
             <Tip
               key={s.id}
-              text={`${s.name}\n${s.desc}${active ? '\n（当前架势）' : disabled ? '\n本回合已切换过架势，下回合才能再换。' : '\n点击切换为该架势。'}`}
+              text={`${s.name}\n${s.desc}${
+                active
+                  ? '\n（当前架势）'
+                  : pending
+                    ? '\n（已选中，按右侧「确认」才真正切换）'
+                    : '\n点击只是查看该架势，需再按右侧「确认」才会切换。'
+              }`}
               placement="top"
               style={{ flex: 1 }}
             >
               <button
-                disabled={disabled}
-                onClick={() => dispatch({ type: 'SWITCH_STANCE', stance: s.id as StanceId })}
+                onClick={() => setPendingStance(pending || active ? null : (s.id as StanceId))}
                 style={{
                   width: '100%',
                   padding: '5px 2px',
@@ -606,14 +674,27 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
                   fontSize: 10.5,
                   fontFamily: 'var(--font-brush)',
                   letterSpacing: 1,
-                  border: `1.5px solid ${active ? 'var(--color-miaojin-light)' : 'rgba(212,168,67,0.45)'}`,
+                  cursor: 'pointer',
+                  border: `1.5px solid ${
+                    active
+                      ? 'var(--color-miaojin-light)'
+                      : pending
+                        ? 'var(--color-minghuang)'
+                        : 'rgba(212,168,67,0.45)'
+                  }`,
                   background: active
-                    ? 'linear-gradient(180deg, #d8543a, var(--color-zhuhong))'
-                    : 'linear-gradient(180deg, rgba(251,247,236,0.92), rgba(236,217,171,0.85))',
+                    ? 'linear-gradient(180deg, var(--color-zhuhong-light), var(--color-zhuhong))'
+                    : pending
+                      ? 'linear-gradient(180deg, rgba(245,197,24,0.92), rgba(212,168,67,0.88))'
+                      : 'linear-gradient(180deg, rgba(251,247,236,0.92), rgba(236,217,171,0.85))',
                   color: active ? 'var(--color-xuanzhi-warm)' : 'var(--color-card-text-sub)',
-                  opacity: disabled ? 0.4 : 1,
                   textShadow: active ? '0 1px 2px rgba(80,20,10,0.5)' : 'none',
-                  boxShadow: active ? '0 0 10px rgba(212,168,67,0.5)' : 'none',
+                  boxShadow: active
+                    ? '0 0 10px rgba(212,168,67,0.5)'
+                    : pending
+                      ? '0 0 12px rgba(245,197,24,0.9)'
+                      : 'none',
+                  transition: 'border-color 140ms, background 140ms, box-shadow 140ms',
                 }}
               >
                 {s.name.split('·')[0]}
@@ -621,6 +702,58 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
             </Tip>
           );
         })}
+
+        {/*
+          确认键：架势切换的**唯一**生效入口。
+          点击架势只做预选（明黄高亮），必须再按这里才 dispatch —— 防止误触改掉整套打法。
+          位置常驻不隐藏，避免预选时整排按钮横向跳位。
+        */}
+        <Tip
+          text={
+            `确认切换架势\n架势决定整套打法，误触代价高，因此点选之后需要在这里再确认一次。\n` +
+            (state.stanceSwitched
+              ? '本回合已经切换过架势，下回合才能再换。'
+              : pendingStance
+                ? `确认后切换为「${STANCES.find((x) => x.id === pendingStance)?.name ?? pendingStance}」。`
+                : '尚未选中要切换的架势（点上方三个按钮预选）。')
+          }
+          placement="top"
+          style={{ flex: '0 0 50px' }}
+        >
+          <button
+            disabled={!pendingStance || state.stanceSwitched}
+            onClick={() => {
+              if (!pendingStance) return;
+              dispatch({ type: 'SWITCH_STANCE', stance: pendingStance });
+              setPendingStance(null);
+            }}
+            style={{
+              width: '100%',
+              padding: '5px 2px',
+              borderRadius: 5,
+              fontSize: 10.5,
+              fontFamily: 'var(--font-brush)',
+              letterSpacing: 1,
+              cursor: pendingStance && !state.stanceSwitched ? 'pointer' : 'not-allowed',
+              border: `1.5px solid ${
+                pendingStance && !state.stanceSwitched ? 'var(--color-miaojin-light)' : 'rgba(212,168,67,0.4)'
+              }`,
+              background:
+                pendingStance && !state.stanceSwitched
+                  ? 'linear-gradient(180deg, var(--color-miaojin-light), var(--color-miaojin))'
+                  : 'linear-gradient(180deg, rgba(251,247,236,0.8), rgba(236,217,171,0.7))',
+              color: 'var(--color-card-title)',
+              fontWeight: 700,
+              opacity: pendingStance && !state.stanceSwitched ? 1 : 0.45,
+              boxShadow:
+                pendingStance && !state.stanceSwitched ? '0 0 12px rgba(212,168,67,0.9)' : 'none',
+              animation:
+                pendingStance && !state.stanceSwitched ? 'ctaPulse 1.5s ease-in-out infinite' : undefined,
+            }}
+          >
+            确认
+          </button>
+        </Tip>
       </div>
 
       {/* ============ 我方面板 ============ */}
@@ -642,9 +775,9 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
       >
         <CharacterFigure
           characterId={state.characterId}
-          robe={char?.palette.robe ?? '#0b2e59'}
-          trim={char?.palette.trim ?? '#ca6924'}
-          hair={char?.palette.hair ?? '#1a1f2b'}
+          robe={char?.palette.robe ?? 'var(--color-shiqing)'}
+          trim={char?.palette.trim ?? 'var(--color-hupo)'}
+          hair={char?.palette.hair ?? 'var(--color-yaqing)'}
           weapon={state.equipment.some((id) => id && EQUIPMENT_MAP[id]?.kind === 'blade') ? 'blade' : 'artifact'}
           size={84}
           flat
@@ -702,7 +835,9 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
           </div>
 
           <Tip
-            text={`气血 ${state.player.hp}/${state.player.maxHp}\n归零即战败。受击先扣护盾，再扣气血。`}
+            text={`气血 ${state.player.hp}/${state.player.maxHp}${
+              state.player.shield > 0 ? `\n护盾 ${state.player.shield} 点（优先被扣，条上绿色一段）` : ''
+            }\n归零即战败。受击先扣护盾，再扣气血。`}
             placement="top"
             style={{ display: 'block' }}
           >
@@ -710,6 +845,7 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
               label="气血"
               value={state.player.hp}
               cap={state.player.maxHp}
+              shield={state.player.shield}
               color="linear-gradient(90deg, var(--color-hp-grad-a), var(--color-hp-grad-b))"
               height={12}
             />
@@ -1162,49 +1298,50 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
         {/* 次级操作：「阴阳逆转」在左（辅助），「结束回合」在右下（主操作，防误触需连点两次） */}
         <div style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
           <Tip
-            text={`阴阳逆转\n把较多的那种炁，按 ${regRatio} : 1 的比例转换成另一种炁，用于凑齐出牌费用。\n每回合限一次；敌方前摇时不可用。`}
+            text={
+              `阴阳逆转\n把较多的那种炁，按 ${regRatio} : ${regGain} 的比例转换成另一种炁，用于凑齐出牌费用。\n每回合限一次；敌方前摇时不可用。\n` +
+              (state.regulated
+                ? '本回合已经用过了。'
+                : isTelegraph
+                  ? '敌方前摇中，不可调息。'
+                  : canRegulate
+                    ? `本次消耗 ${regRatio} 点${regFromCN}，换得 ${regGain} 点${regToCN}。`
+                    : regDisabledTip)
+            }
             placement="top"
             style={{ flex: 1 }}
           >
             <JadeButton
-              onClick={() => dispatch({ type: 'REGULATE', from: state.yang >= state.yin ? 'yang' : 'yin' })}
-              disabled={state.regulated || isTelegraph}
+              onClick={() => dispatch({ type: 'REGULATE', from: regFrom })}
+              disabled={!canRegulate}
               variant="ghost"
               size="sm"
               style={{ width: '100%' }}
             >
-              ☯ 阴阳逆转{state.regulated ? '（已用）' : ''}
+              {state.regulated
+                ? '☯ 阴阳逆转（已用）'
+                : isTelegraph
+                  ? '☯ 阴阳逆转·前摇中'
+                  : canRegulate
+                    ? `☯ 阴阳逆转 ${regRatio}:${regGain}`
+                    : regOutcome.reason === 'targetFull'
+                      ? '☯ 阴阳逆转·目标已满'
+                      : `☯ 阴阳逆转·${regFrom === 'yang' ? '阳' : '阴'}不足`}
             </JadeButton>
           </Tip>
           <Tip
-            text={'结束回合\n放弃本回合剩余行动，进入敌方回合。\n为防误触需要连点两次确认。'}
+            text={'结束回合\n放弃本回合剩余行动。\n若手牌超过上限，会先进入「归墟」阶段处理多余的牌，再交给敌方行动。'}
             placement="top"
             style={{ flex: 1.15 }}
           >
             <JadeButton
-              onClick={() => {
-                if (!endArmed) {
-                  setEndArmed(true);
-                  return;
-                }
-                setEndArmed(false);
-                dispatch({ type: 'END_TURN' });
-              }}
+              onClick={() => dispatch({ type: 'END_TURN' })}
               disabled={isTelegraph}
               variant="primary"
               size="sm"
-              style={{
-                width: '100%',
-                ...(endArmed
-                  ? {
-                      background: 'linear-gradient(180deg, var(--color-miaojin-light), var(--color-miaojin))',
-                      color: 'var(--color-card-title)',
-                      animation: 'ctaPulse 0.9s ease-in-out infinite',
-                    }
-                  : {}),
-              }}
+              style={{ width: '100%' }}
             >
-              {endArmed ? '再点一次确认' : '结 束 回 合'}
+              结 束 回 合
             </JadeButton>
           </Tip>
         </div>
@@ -1221,7 +1358,7 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
               overflowY: 'auto',
               fontSize: 10.5,
               lineHeight: 1.6,
-              color: '#f6ead0',
+              color: 'var(--color-mibai)',
               background: 'linear-gradient(180deg, rgba(38,28,17,0.9), rgba(26,19,11,0.92))',
               border: '1px solid rgba(212,168,67,0.55)',
               borderLeft: '3px solid var(--color-miaojin)',
@@ -1242,6 +1379,141 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
           </div>
         </Tip>
       </div>
+
+      {/* ============ 归墟阶段：手牌超上限时的弃牌面板 ============ */}
+      {state.phase === 'relic' && (
+        <RelicPhase
+          state={state}
+          dispatch={dispatch}
+          onBurst={handleRelicBurst}
+          onDiscard={handleRelicDiscard}
+        />
+      )}
+
+      {/* ---------- 归墟流光：物理=朱红，术法=月白，飞入底部阴阳炁条 ---------- */}
+      {relicFlows.map((f) => (
+        <div
+          key={f.id}
+          style={
+            {
+              position: 'absolute',
+              left: f.x - 26,
+              top: f.y - 26,
+              width: 52,
+              height: 52,
+              borderRadius: '50%',
+              pointerEvents: 'none',
+              zIndex: 94,
+              background: f.yang
+                ? 'radial-gradient(circle, rgba(214,236,255,1) 0%, rgba(159,196,221,0.85) 45%, rgba(106,158,196,0) 72%)'
+                : 'radial-gradient(circle, rgba(255,190,150,1) 0%, rgba(194,59,34,0.85) 45%, rgba(194,59,34,0) 72%)',
+              boxShadow: f.yang ? '0 0 26px rgba(214,236,255,0.95)' : '0 0 26px rgba(216,84,58,0.95)',
+              '--dx': `${f.dx}px`,
+              '--dy': `${f.dy}px`,
+              animation: `relicFlow ${RELIC_FLOW_MS}ms cubic-bezier(0.35,0,0.2,1) forwards`,
+            } as React.CSSProperties
+          }
+        />
+      ))}
+
+      {/* ---------- 弃牌残影：半透明停留片刻，表示对手也看得到（留牌心理战） ---------- */}
+      {relicGhosts.length > 0 && (
+        <div
+          style={{
+            position: 'absolute',
+            right: 8,
+            top: 118,
+            display: 'flex',
+            flexDirection: 'column',
+            gap: 5,
+            pointerEvents: 'none',
+            zIndex: 93,
+          }}
+        >
+          {relicGhosts.map((g) => (
+            <div
+              key={g.id}
+              style={{
+                padding: '3px 7px',
+                borderRadius: 5,
+                fontSize: 9.5,
+                opacity: 0.55,
+                background: 'rgba(30,22,14,0.85)',
+                border: `1px solid ${g.yang ? 'rgba(159,196,221,0.85)' : 'rgba(216,84,58,0.85)'}`,
+                color: g.yang ? 'var(--color-tianqing)' : 'var(--color-liuguang-yin)',
+                whiteSpace: 'nowrap',
+              }}
+            >
+              弃 {g.name}
+            </div>
+          ))}
+        </div>
+      )}
+
+      {/*
+        「大量归墟」演出：一次化去多张时绽放金色水墨莲花。
+        放在 BattleScreen 而不是归墟面板里 —— 归墟一结束面板就卸载，
+        若把演出挂在面板上会被硬生生切断。
+      */}
+      {lotus && (
+        <div
+          style={{
+            position: 'absolute',
+            inset: 0,
+            zIndex: 92,
+            display: 'flex',
+            alignItems: 'center',
+            justifyContent: 'center',
+            pointerEvents: 'none',
+          }}
+        >
+          <svg
+            width={330}
+            height={330}
+            viewBox="0 0 200 200"
+            style={{ animation: 'relicLotus 1500ms cubic-bezier(0.2,0.7,0.3,1) forwards' }}
+          >
+            <g transform="translate(100,100)">
+              {/* 八瓣莲花：粗黑描边 + 金色平涂，符合全项目粗线条国潮画风 */}
+              {Array.from({ length: 8 }).map((_, i) => (
+                <ellipse
+                  key={i}
+                  cx="0"
+                  cy="-46"
+                  rx="17"
+                  ry="46"
+                  transform={`rotate(${i * 45})`}
+                  fill="var(--color-miaojin)"
+                  fillOpacity="0.16"
+                  stroke="var(--color-miaojin)"
+                  strokeWidth="3.5"
+                />
+              ))}
+              {Array.from({ length: 8 }).map((_, i) => (
+                <ellipse
+                  key={`in-${i}`}
+                  cx="0"
+                  cy="-27"
+                  rx="10"
+                  ry="27"
+                  transform={`rotate(${i * 45 + 22.5})`}
+                  fill="var(--color-minghuang)"
+                  fillOpacity="0.22"
+                  stroke="var(--color-miaojin-light)"
+                  strokeWidth="3"
+                />
+              ))}
+              <circle
+                r="16"
+                fill="var(--color-minghuang)"
+                fillOpacity="0.55"
+                stroke="var(--color-miaojin-light)"
+                strokeWidth="3.5"
+              />
+            </g>
+          </svg>
+        </div>
+      )}
     </div>
   );
 }
@@ -1256,6 +1528,12 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
  * - 半透明暗色底 + 金边，解决立绘复杂导致文字辨识度低的问题
  */
 function EnemyInfoPanel({ enemy, dead }: { enemy: BattleState['enemies'][number]; dead: boolean }) {
+  /** 与玩家血条同一套规则：有盾则压缩血条，右侧接一段松花绿护盾条 */
+  const eShield = Math.max(0, enemy.shield ?? 0);
+  const eDenom = enemy.maxHp + eShield;
+  const eHpPct = eDenom > 0 ? (enemy.hp / eDenom) * 100 : 0;
+  const eShPct = eDenom > 0 ? (eShield / eDenom) * 100 : 0;
+
   return (
     <div
       style={{
@@ -1278,7 +1556,7 @@ function EnemyInfoPanel({ enemy, dead }: { enemy: BattleState['enemies'][number]
           style={{
             fontFamily: 'var(--font-brush)',
             fontSize: 11,
-            color: '#f7edd6',
+            color: 'var(--color-mibai)',
             textShadow: '0 1px 2px rgba(0,0,0,0.8)',
             whiteSpace: 'nowrap',
             overflow: 'hidden',
@@ -1303,7 +1581,12 @@ function EnemyInfoPanel({ enemy, dead }: { enemy: BattleState['enemies'][number]
         )}
       </div>
 
-      <Tip text={`敌方气血 ${enemy.hp}/${enemy.maxHp}\n归零即被击败。`} placement="top">
+      <Tip
+        text={`敌方气血 ${enemy.hp}/${enemy.maxHp}${
+          eShield > 0 ? `\n护盾 ${eShield} 点（优先被扣，条上绿色一段）` : ''
+        }\n归零即被击败。`}
+        placement="top"
+      >
         <div
           style={{
             width: 96,
@@ -1312,17 +1595,30 @@ function EnemyInfoPanel({ enemy, dead }: { enemy: BattleState['enemies'][number]
             borderRadius: 5,
             border: '1px solid rgba(212,168,67,0.8)',
             overflow: 'hidden',
+            display: 'flex',
           }}
         >
           <div
             style={{
-              width: `${(enemy.hp / enemy.maxHp) * 100}%`,
+              width: `${eHpPct}%`,
               height: '100%',
-              background: 'linear-gradient(90deg, #e8604a, var(--color-enemy-hp))',
+              background: 'linear-gradient(90deg, var(--color-enemy-hp-light), var(--color-enemy-hp))',
               transition: 'width 260ms',
               boxShadow: '0 0 6px rgba(217,74,61,0.8)',
             }}
           />
+          {eShield > 0 && (
+            <div
+              style={{
+                width: `${eShPct}%`,
+                height: '100%',
+                background: 'linear-gradient(90deg, var(--color-shield), var(--color-shield-light))',
+                borderLeft: '1.5px solid rgba(255,246,220,0.95)',
+                transition: 'width 260ms',
+                boxShadow: '0 0 6px rgba(123,182,97,0.9)',
+              }}
+            />
+          )}
         </div>
       </Tip>
 
@@ -1334,7 +1630,7 @@ function EnemyInfoPanel({ enemy, dead }: { enemy: BattleState['enemies'][number]
           justifyContent: 'center',
           gap: 4,
           fontSize: 9.5,
-          color: '#e8dcc0',
+          color: 'var(--color-mibai-dim)',
           fontVariantNumeric: 'tabular-nums',
           whiteSpace: 'nowrap',
         }}
@@ -1744,7 +2040,7 @@ function GameCard({
           zIndex: 2,
           fontSize: 10,
           lineHeight: 1.3,
-          color: '#3a2c18',
+          color: 'var(--color-ink-soft)',
           fontWeight: 700,
           marginTop: 2,
           display: '-webkit-box',
