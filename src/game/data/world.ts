@@ -1,3 +1,4 @@
+import { t } from '../../i18n';
 import type { LunarMonth, ShiShen, SolarTerm, Stance } from '../types';
 
 /* ============================== 架势 ============================== */
@@ -13,7 +14,8 @@ export const STANCES = [
     id: 'faxiu',
     name: '法修·五行轮转',
     // 【文案对齐实现】补上此前漏写的相生基础倍率：伤害 = FAXIU_SHENG_MUL(×1.5) + 逐环 +10%。
-    desc: '按五行相生顺序（木→火→土→金→水）连续出牌，相生基础倍率 ×1.5（每多一环再 +10%），且每张费用减半；相克可打断敌方蓄力并附加虚弱。',
+    // 【S1 归一】相生顺序文案的单一真源改为 t('label.wuxingChain')（原此处与 BattleScreen 各有一份副本）。
+    desc: `按五行相生顺序（${t('label.wuxingChain')}）连续出牌，相生基础倍率 ×1.5（每多一环再 +10%），且每张费用减半；相克可打断敌方蓄力并附加虚弱。`,
     substituteRatio: 2,
   },
   {

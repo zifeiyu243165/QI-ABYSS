@@ -18,6 +18,12 @@
  *   - StatusId 联合类型成员没在 statuses.ts 登记
  *   - 声明 implemented:true 却是空 hooks 的节气（纯 no-op）
  *   - 常量之间的算术关系被改坏（HAND_DRAW_CAP / PARRY_TOTAL_MS）
+ *   - src/**（除唯一真源 src/i18n/**）冒出中文字面量（文案铁律 §9，**渐进收紧**）
+ *
+ * ## §9 的「渐进收紧」与退出码
+ *   §9 采用与 §3 hex 一致的**豁免台账**语义：已迁移的文件不在清单里（再写中文即 error），
+ *   未迁移/永不迁移的文件登记在 CJK_PENDING / CJK_DEV_ERROR_EXEMPT 里，只打印 ⚠、不计入 error。
+ *   因此 §9 落地**不会**让守卫变红（退出码仍为 0），只会让 ⚠ 债务可见、可追踪、逐步清空。
  *
  * ## 它拦不住什么（很重要，别把它当银弹）
  *   - **拦不住「读对了但算错了」**：比如 effectiveDefense 公式写反、伤害被重复减伤。
@@ -27,10 +33,16 @@
  *   - 拦不住依赖新增：npm 依赖是否被偷偷引入要人去 review package.json。
  *
  * ## 退出码语义（接 CI 用）
- *   - 存在 error  → process.exitCode = 1（红）
- *   - 只有 warning → process.exitCode = 0（绿，但黄灯可见）
+ *   - 存在 error  → process.exitCode = 1（红）—— 卡住构建
+ *   - 只有 warning → process.exitCode = 0（绿，但黄灯可见）—— 不卡构建
  *   豁免（exempt）一律打印为 ⚠ 警告而非错误，且每条豁免在下方清单里都写了可读理由，
  *   让「历史债务」一直可见、可追踪，而不是被一句「已豁免」永久掩盖。
+ *
+ * ## 与打包流程的关系（决策④ · 接入打包）
+ *   package.json 的 `build` 已改为「先跑本守卫，再做原有两步」（`npm run guard && tsc -b && vite build`）：
+ *   守卫不过（有 error）就不该开始编译 —— 编译产物是「不可回退」的一步，错误要在源头拦。
+ *   因为「仅 warning → 退出码 0」，当前这十几条既有债务（⚠）**不会**卡住打包，
+ *   只有真 error 才会。需要单独体检时用 `npm run guard`。
  *
  * 只使用 Node 原生模块，零第三方依赖；路径统一走 node:path，Windows / Git Bash 均可运行。
  */
@@ -118,14 +130,18 @@ function eachLine(text, fn) {
 /**
  * hex 越界豁免清单。
  * 【记录的是「遗留数量」】—— 守卫每次运行都会把当前实际数量与这里的登记值对比，
- * 一旦增长会额外告警，让债务可见、可追踪。改动 src/styles/** 不在本次任务范围内，
- * 故这些既有 hex 只能先豁免为 ⚠，不能自行修掉。
+ * 一旦增长会额外告警，让债务可见、可追踪。
+ *
+ * 【决策① · 角色调色板全部令牌化 —— 本次已从清单移除两项】
+ *   - src/game/data/actors.ts（原 9 处 hex）
+ *   - src/components/svg/Figure.tsx（原 3 处 hex）
+ *   两者现在已清零 hex（角色 palette 与程序化立绘全部改走 var(--color-role-*)），
+ *   故不再需要豁免 —— 移除后不再产生 ⚠，且今后谁在这两个文件里写 hex 会**直接报 error**。
+ *
+ * 【保留项】Effects.tsx（Canvas 粒子色）/ Screens.tsx / global.css 不属于本次决策范围，
+ *   维持 ⚠ 豁免，待用户后续拍板；豁免条目始终带可读理由，让历史债务可见而非被掩盖。
  */
 const HEX_EXEMPT = {
-  'src/game/data/actors.ts': {
-    count: 9,
-    reason: '角色调色板（palette: {robe,trim,hair}）属于「数据」而非「主题」——它是角色立绘的程序化配色输入，不是可被 tokens 统一管理的主题色。',
-  },
   'src/components/fx/Effects.tsx': {
     count: 14,
     reason: 'Canvas 粒子颜色。Canvas 2D 无法直接消费 CSS 变量，需 getComputedStyle 逐帧读取后再填 ctx.fillStyle，改动成本高且属独立任务。',
@@ -134,13 +150,9 @@ const HEX_EXEMPT = {
     count: 4,
     reason: '界面组件遗留色值，属用户尚未拍板的独立「文案/样式统一」任务。',
   },
-  'src/components/svg/Figure.tsx': {
-    count: 3,
-    reason: '程序化 SVG 立绘的描边/瞳色等遗留色值，属用户尚未拍板的独立任务。',
-  },
   'src/styles/global.css': {
     count: 3,
-    reason: '全局样式遗留色值；本次任务明确禁止修改 src/styles/**，留待用户拍板。',
+    reason: '全局样式遗留色值；本次任务明确禁止修改 src/styles/**（tokens.css 除外），留待用户拍板。',
   },
 };
 
@@ -168,6 +180,48 @@ const CONST_EXEMPT = {
   SHISHEN_BONUS_HITS: '文档用途：食神额外连击段数，battle.ts 内联了字面量 2，属数值未单一来源的债务。',
   SHISHEN_HIT_MUL: '文档用途：食神每段伤害系数，battle.ts 内联了字面量 0.8，属数值未单一来源的债务。',
   PIANCAI_DRAW_RATE: '文档用途：偏财额外抽牌概率，battle.ts 内联了字面量 0.2，属数值未单一来源的债务。',
+};
+
+/**
+ * §9 文案越界豁免 · 待迁移台账（渐进收紧）。
+ * 语义与 §3 HEX_EXEMPT 一致：登记「本批尚未迁移」的文件与当前中文字面量行数；
+ * 随 S2/S3/S4 推进，迁移完成的文件从本清单**删除** —— 删除后该文件再出现中文即直接 error。
+ * 注意：src/i18n/** 是文案真源，§9 扫描时整体排除，故不在清单内。
+ * 行数为「剥离注释后仍含 CJK 的行数」，与检查口径一致。
+ */
+const CJK_PENDING = {
+  'src/components/BattleScreen.tsx': { count: 108, reason: '本批未迁移（S2）：组件层大批文案留待下一批；本批只动了 S1 涉及的那几处。' },
+  'src/components/fx/Effects.tsx': { count: 2, reason: '本批未迁移（S2）：特效层文案。' },
+  'src/components/RelicPhase.tsx': { count: 13, reason: '本批未迁移（S2）：仅归墟面板的 kindCN 与 3 条带参提示已入表，其余文案留待下一批。' },
+  'src/components/Screens.tsx': { count: 46, reason: '本批未迁移（S2）：外围界面（主界面/编队/结算/开场）文案留待下一批。' },
+  'src/components/svg/Figure.tsx': { count: 9, reason: '本批未迁移（S2）：立绘兜底文案。' },
+  'src/components/ui/Primitives.tsx': { count: 1, reason: '本批未迁移（S2）：通用组件内文案。' },
+  'src/components/ui/Tip.tsx': { count: 5, reason: '本批未迁移（S2）：WUXING_TIP（五行释义长文，量大）留待下一批。' },
+  'src/game/audio.ts': { count: 3, reason: '本批未迁移：音频资源文件名（非界面文案），后续批次评估。' },
+  'src/game/data/actors.ts': { count: 59, reason: '本批未迁移（S3）：角色/敌人/战役数据文案留待下一批。' },
+  'src/game/data/cards.ts': { count: 47, reason: '本批未迁移（S3）：卡牌/装备数据文案留待下一批。' },
+  'src/game/data/statuses.ts': { count: 8, reason: '本批未迁移（S3）：STATUS_BEHAVIOR 的 effect 机制说明留待下一批；label 已改为 labelKey。' },
+  'src/game/data/world.ts': { count: 80, reason: '本批未迁移（S3）：架势/十神/节气/月令数据文案留待下一批；仅相生顺序副本已入表。' },
+  'src/game/engine/battle.test.ts': { count: 102, reason: '本批未迁移（测试）：用例名与断言中的中文说明串，随 S4 日志结构化一并处理。' },
+  'src/game/engine/battle.ts': { count: 70, reason: '本批未迁移（第三批 S4）：引擎战报日志（pushLog 文案）待结构化。' },
+  'src/game/engine/contract.test.ts': { count: 77, reason: '本批未迁移（测试）：用例名与断言中的中文说明串。' },
+  'src/game/engine/damage.ts': { count: 14, reason: '本批未迁移（第三批 S4）：13 处 DamageModifier.label 待结构化；其中 1 处 throw 属 dev 错误消息。' },
+  'src/game/engine/diag.test.ts': { count: 5, reason: '本批未迁移（测试）：诊断用例的中文说明串。' },
+  'src/game/types.ts': { count: 3, reason: '本批未迁移（S3）：faction/season/category 等联合类型字面量（数据枚举值），下一批评估。' },
+  'src/styles/tokens.css': { count: 2, reason: '字体族名「楷体/宋体」为 CSS 字符串字面量；属样式层，本批禁改 styles/**。' },
+};
+
+/**
+ * §9 文案越界豁免 · **永不迁移**（仅供开发期排障的错误消息）。
+ * 这些文件里的中文**只出现在 throw new Error(...) 的排障消息**里（含 assertNever 的
+ * `what = '分支'` 默认值，它只用于拼错误串），玩家永不可见，保留中文便于排障。
+ * 【为何用文件级而非行级】这两个文件经核实「全部中文行都只属于错误消息构造」——
+ * 文件级豁免更简单、且不会被行号漂移打碎；代价是若将来有人在其中写入面向玩家的中文会被放行，
+ * 因此把范围压到最小（仅这两个文件），并在理由里写死「仅 dev 错误消息」以警示。
+ */
+const CJK_DEV_ERROR_EXEMPT = {
+  'src/game/engine/assertNever.ts': '仅 dev 错误消息：穷尽性检查的报错串（含 what 默认值「分支」），玩家永不可见。',
+  'src/game/engine/hooks.ts': '仅 dev 错误消息：节气钩子契约校验的报错串，玩家永不可见。',
 };
 
 /* ============================== 各项检查 ============================== */
@@ -398,6 +452,45 @@ function checkConstantRelations(E, W) {
   void W;
 }
 
+/* ============================== §9 文案越界检查 ============================== */
+
+/**
+ * §9 文案越界（文案铁律）。
+ * 注释先用既有的 stripComments 剥离，剩下的中文字符只可能来自**字符串字面量**。
+ * 判定：命中 CJK 且不在任何豁免清单 → error；在 CJK_PENDING → ⚠（并追踪行数增长）；
+ * 在 CJK_DEV_ERROR_EXEMPT → ⚠（永不迁移）。src/i18n/** 是文案真源，直接跳过。
+ */
+function checkCjkLiterals(E, W) {
+  const files = walk(SRC, ['.ts', '.tsx', '.css']).filter((f) => !toRel(f).startsWith('src/i18n/'));
+  const re = /[\u4e00-\u9fff]/;
+  for (const f of files) {
+    const rel = toRel(f);
+    let total = 0; // 含 CJK 的行数（剥离注释后）——与豁免台账里的登记口径一致
+    let firstLine = 0;
+    let sample = '';
+    eachLine(stripComments(readText(f)), (line, ln) => {
+      if (!re.test(line)) return;
+      total += 1;
+      if (firstLine === 0) { firstLine = ln; sample = line.trim().slice(0, 48); }
+    });
+    if (total === 0) continue;
+
+    const devExempt = CJK_DEV_ERROR_EXEMPT[rel];
+    if (devExempt) {
+      W.push({ file: rel, line: firstLine, msg: `文案越界豁免（永不迁移）：本文件 ${total} 行含中文字面量 —— ${devExempt}` });
+      continue;
+    }
+
+    const pending = CJK_PENDING[rel];
+    if (pending) {
+      const grow = total > pending.count ? `（较登记 ${pending.count} 行 **增长**！）` : '';
+      W.push({ file: rel, line: firstLine, msg: `文案越界（待迁移）：本文件 ${total} 行含中文字面量${grow} —— ${pending.reason}` });
+    } else {
+      E.push({ file: rel, line: firstLine, msg: `文案越界：本文件不在豁免清单内，不得出现中文字面量（示例：${sample}）—— 请把文案移入 src/i18n/locales/zh-CN.ts 并用 t() 引用` });
+    }
+  }
+}
+
 /* ============================== 主流程 ============================== */
 
 const CHECKS = [
@@ -409,6 +502,7 @@ const CHECKS = [
   { id: 6, name: '状态完备性（StatusId 成员须在 statuses.ts 登记）', run: checkStatusCompleteness },
   { id: 7, name: '节气实装状态（implemented:true 不得是空 hooks）', run: checkImplementedTerms },
   { id: 8, name: '常量关系（HAND_DRAW_CAP / PARRY_TOTAL_MS）', run: checkConstantRelations },
+  { id: 9, name: '文案越界（src/** 除 src/i18n/** 不得写中文字面量 · 渐进收紧）', run: checkCjkLiterals },
 ];
 
 function main() {

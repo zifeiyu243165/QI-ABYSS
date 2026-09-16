@@ -240,4 +240,9 @@ export const ENEMY_SPACING = 100;
 /* ============================== 存档 ============================== */
 
 export const SAVE_KEY = 'v1_qiabyss_save';
-export const SAVE_VERSION = 1;
+/**
+ * 存档版本。
+ * 【S5】1 → 2：新增 `locale` 字段。旧存档由 App.loadSave 的 migrateSave 平滑升级（补 locale，其余保留），
+ * **不再**因版本不等而清空玩家进度。
+ */
+export const SAVE_VERSION = 2;

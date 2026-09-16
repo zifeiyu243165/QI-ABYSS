@@ -14,6 +14,17 @@
  *
  * 【本文件里凡是「故意设计成这样、别改回去」的地方都写了注释，请勿静默改动。】
  */
+/// <reference types="node" />
+// A4-7 需读取源码文本做静态令牌扫描：
+//  - actors.ts / Figure.tsx 用 Vite 的 ?raw 导入（类型来自 tsconfig 的 vite/client）；
+//  - tokens.css 的 ?raw / ?inline / ?url 在 vitest 下**一律被抹成空模块**（已实测），
+//    故只能直读文件。src 侧 tsconfig 的 types 仅含 vite/client，这里用三斜线指令为本文件
+//    显式引入 node 类型 —— 不改 tsconfig，也不影响其它文件的类型环境。
+import { readFileSync } from 'node:fs';
+import { dirname, join, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
+import actorsSource from '../data/actors.ts?raw';
+import figureSource from '../../components/svg/Figure.tsx?raw';
 import { describe, expect, it } from 'vitest';
 import type { BattleState, Card, Combatant, DamageContext, StanceId, StatusId } from '../types';
 import { battleReducer, canPlayCard, cardCost, createBattleState, regulateOutcome } from './battle';
@@ -552,6 +563,38 @@ describe('A4 数据完备性（静态扫描）', () => {
       }
       if (e.kind === 'blade') {
         expect(e.atkBonus, `兵刃 ${e.id} 未提供任何攻击加成（作为唯一合法 addBase 来源却什么都不加）`).toBeGreaterThan(0);
+      }
+    }
+  });
+
+  /**
+   * 【决策① 防回归】角色配色的 var() 引用必须指向 tokens.css 里真实存在的令牌。
+   *
+   * 为什么必须测：角色 palette 从数据层透传到 SVG 的 fill / stroke 表现属性后，
+   * 若引用了**不存在**的 var(--x)，浏览器不会抛错，只会静默走 fallback
+   * （角色变透明 / 变黑）—— 类型系统也看不见字符串里的令牌名是否拼错。
+   * 这类缺陷「不报错、只静默显示异常」，只有静态扫描能拦，故补这一条断言。
+   */
+  it('A4-7 角色配色引用的令牌都真实存在于 tokens.css（防拼错令牌名静默失效）', () => {
+    const root = resolve(dirname(fileURLToPath(import.meta.url)), '../../..');
+    const tokensCss = readFileSync(join(root, 'src/styles/tokens.css'), 'utf8');
+    // 令牌定义形如 `--color-xxx:`；而 var(--yyy) 里没有冒号，不会被误判成定义
+    const defined = new Set([...tokensCss.matchAll(/(--[A-Za-z0-9-]+)\s*:/g)].map((m) => m[1]));
+    expect(defined.size, 'tokens.css 未解析到任何令牌，扫描正则可能失配').toBeGreaterThan(0);
+
+    // 数据层（角色 palette）与程序化 SVG 立绘兜底：两处 var() 引用都必须落在令牌集合内
+    const consumers: readonly (readonly [string, string])[] = [
+      ['src/game/data/actors.ts', actorsSource],
+      ['src/components/svg/Figure.tsx', figureSource],
+    ];
+    for (const [rel, text] of consumers) {
+      const used = [...text.matchAll(/var\(\s*(--[A-Za-z0-9-]+)\s*\)/g)].map((m) => m[1]);
+      expect(used.length, `${rel} 未引用任何 var(--*) 令牌（配色铁律可能被绕过）`).toBeGreaterThan(0);
+      for (const name of used) {
+        expect(
+          defined.has(name),
+          `${rel} 引用了 tokens.css 中不存在的令牌 ${name} —— 会降级为无色/黑色，静默显示异常`,
+        ).toBe(true);
       }
     }
   });

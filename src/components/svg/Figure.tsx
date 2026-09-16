@@ -122,6 +122,12 @@ export function EnemyFigure({ enemyId, shape, wuxing, size = 130, dim = false, c
 
 /* ============================== SVG 兜底 ============================== */
 
+/**
+ * 程序化 SVG 立绘：全部颜色走 tokens.css 的 CSS 变量（配色铁律，本文件零 hex）。
+ * 角色衣袍 / 描边 / 发色由数据层 palette 透传（已是对 var(--color-role-*) 的引用），
+ * 肤色 / 肤色高光 / 衣袍暗面则直接引用「角色立绘配色」分组的令牌。
+ */
+
 const WX_FILL: Record<string, string> = {
   jin: 'var(--color-wx-jin)',
   mu: 'var(--color-wx-mu)',
@@ -147,13 +153,16 @@ function SvgCharacter({
     >
       <ellipse cx="60" cy="150" rx="46" ry="10" fill={trim} opacity="0.18" />
       <path d="M60 44 L32 74 L20 164 L100 164 L88 74 Z" fill={robe} />
-      <path d="M60 44 L32 74 L20 164 L48 164 L52 80 Z" fill="#000" opacity="0.16" />
+      {/* 衣袍暗面（原先直接写纯黑填充）：改用最深的角色色令牌「鸦青」+ 16% 透明度。
+          选择理由：本项目设计基调「严禁纯黑背景」，鸦青是色卡本里最深的中性色，
+          在 16% 透明度下与纯黑的观感差异不可辨，既守住铁律又保持视觉零变化。 */}
+      <path d="M60 44 L32 74 L20 164 L48 164 L52 80 Z" fill="var(--color-role-yaqing)" opacity="0.16" />
       <path d="M60 44 L46 76 L60 164 L74 76 Z" fill={trim} opacity="0.85" />
       <path d="M46 76 L38 150" stroke={trim} strokeWidth="3" fill="none" opacity="0.9" />
       <path d="M74 76 L82 150" stroke={trim} strokeWidth="3" fill="none" opacity="0.9" />
       <rect x="40" y="96" width="40" height="9" rx="2" fill={trim} opacity="0.95" />
-      <rect x="54" y="36" width="12" height="12" fill="#e8c9a8" />
-      <ellipse cx="60" cy="26" rx="15" ry="17" fill="#f2d8bb" />
+      <rect x="54" y="36" width="12" height="12" fill="var(--color-role-skin)" />
+      <ellipse cx="60" cy="26" rx="15" ry="17" fill="var(--color-role-skin-light)" />
       <path d="M43 26 Q44 6 60 6 Q76 6 77 26 Q74 16 60 16 Q46 16 43 26 Z" fill={hair} />
       <path d="M43 24 Q38 34 40 46 Q44 36 46 26 Z" fill={hair} />
       <path d="M77 24 Q82 34 80 46 Q76 36 74 26 Z" fill={hair} />

@@ -10,6 +10,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import type { BattleState, SaveData } from '../game/types';
+import { WU_XING_KE } from '../game/constants';
 import { CHARACTERS, CHARACTER_MAP } from '../game/data/actors';
 import { EQUIPMENT, findCombo } from '../game/data/cards';
 import {
@@ -201,8 +202,8 @@ export function LoadoutScreen({
   const term = SOLAR_TERM_MAP[termId];
 
   const deling = char && month && char.wuxing === month.wuxing;
-  const shiling =
-    char && month && { mu: 'tu', tu: 'shui', shui: 'huo', huo: 'jin', jin: 'mu' }[month.wuxing] === char.wuxing;
+  // 【S1 归一】五行相克的单一真源 = constants.WU_XING_KE（原此处内联了一份副本）
+  const shiling = char && month && WU_XING_KE[month.wuxing] === char.wuxing;
 
   const flowName = useMemo(() => {
     const kinds = [slotA, slotB].map((id) => EQUIPMENT.find((e) => e.id === id)?.kind);
@@ -633,8 +634,8 @@ export function ResultScreen({
   const term = SOLAR_TERM_MAP[state.solarTermId];
 
   const deling = char && month && char.wuxing === month.wuxing;
-  const shiling =
-    char && month && { mu: 'tu', tu: 'shui', shui: 'huo', huo: 'jin', jin: 'mu' }[month.wuxing] === char.wuxing;
+  // 【S1 归一】同编队页：五行相克统一走 constants.WU_XING_KE
+  const shiling = char && month && WU_XING_KE[month.wuxing] === char.wuxing;
 
   return (
     <div

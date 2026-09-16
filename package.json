@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "vite",
-    "build": "tsc -b && vite build",
+    "build": "npm run guard && tsc -b && vite build",
     "build:safe": "tsc -b && vite build --emptyOutDir false",
     "lint": "oxlint",
     "test": "vitest run",

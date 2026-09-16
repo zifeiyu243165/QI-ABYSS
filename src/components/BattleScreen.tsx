@@ -27,10 +27,11 @@ import { LUNAR_MONTH_MAP, SOLAR_TERM_MAP, STANCES } from '../game/data/world';
 import { SHI_SHEN_MAP } from '../game/data/world';
 import { EQUIPMENT_MAP, findCombo } from '../game/data/cards';
 import { PARRY_TELEGRAPH_MS, PARRY_TOTAL_MS, SHI_CAP, WUSHENG_KAITIAN_STACKS } from '../game/constants';
+import { KIND_KEY, STATUS_TIP_KEY, t, WUXING_KEY } from '../i18n';
 import { CharacterFigure, EnemyFigure } from './svg/Figure';
-import { BaguaPlatform, StatusGlyph, WuXingGlyph, WuXingSeal, STATUS_CN, WX_STROKE } from './svg/Glyphs';
+import { BaguaPlatform, StatusGlyph, WuXingGlyph, WuXingSeal, WX_STROKE } from './svg/Glyphs';
 import { JadeButton, FlowBar } from './ui/Primitives';
-import { Tip, STATUS_TIP, WUXING_TIP } from './ui/Tip';
+import { Tip, WUXING_TIP } from './ui/Tip';
 import { RelicPhase } from './RelicPhase';
 import type { DiscardFlow } from './RelicPhase';
 import { playSfx } from '../game/audio';
@@ -899,7 +900,7 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
           )}
           {state.stance === 'faxiu' && (
             <Tip
-              text={`五行轮转：${state.lastSpellWuxing ? '相生（已进入轮转）' : '起手（本回合尚未出术法）'}\n法修按五行相生顺序（木→火→土→金→水）连续出术法牌，每张费用减半且伤害递增 10%。`}
+              text={`五行轮转：${state.lastSpellWuxing ? '相生（已进入轮转）' : '起手（本回合尚未出术法）'}\n法修按五行相生顺序（${t('label.wuxingChain')}）连续出术法牌，每张费用减半且伤害递增 10%。`}
               placement="top"
             >
               <div>
@@ -1645,7 +1646,7 @@ function EnemyInfoPanel({ enemy, dead }: { enemy: BattleState['enemies'][number]
         )}
         <span style={{ display: 'flex', gap: 2 }}>
           {enemy.statuses.map((s, i) => (
-            <Tip key={i} text={STATUS_TIP[s.id] ?? `${STATUS_CN[s.id] ?? s.id}`} placement="top">
+            <Tip key={i} text={t(STATUS_TIP_KEY[s.id])} placement="top">
               <span style={{ display: 'flex', alignItems: 'center' }}>
                 <StatusGlyph id={s.id} size={11} />
                 <span style={{ fontSize: 9 }}>{s.stacks > 1 ? s.stacks : ''}</span>
@@ -1816,15 +1817,6 @@ function IntentCard({
   );
 }
 
-const KIND_LABEL: Record<string, string> = {
-  physical: '物理',
-  spell: '术法',
-  support: '功能',
-};
-
-/** 五行中文名 */
-const WX_CN: Record<string, string> = { jin: '金', mu: '木', shui: '水', huo: '火', tu: '土' };
-
 /**
  * 卡面底图映射：按「类型 / 五行」分型。
  *
@@ -1919,7 +1911,8 @@ function GameCard({
   /** 分型卡面图（可缺省）：缺图时这一层不渲染，只剩上面的渐变底 */
   const faceImg = CARD_FACE[faceKeyOf(card)];
 
-  const kindTip = `「${card.name}」\n${KIND_LABEL[card.kind]}${wx ? `·${WX_CN[wx]}` : ''}${card.hits > 1 ? ` · ${card.hits} 段` : ''}${card.aoe ? ' · 群体' : ''}\n${card.desc}`;
+  // 【S1 归一】卡牌类别名 / 五行中文名真源 = i18n（原 KIND_LABEL / WX_CN 两份本地副本已删）
+  const kindTip = `「${card.name}」\n${t(KIND_KEY[card.kind])}${wx ? `·${t(WUXING_KEY[wx])}` : ''}${card.hits > 1 ? ` · ${card.hits} 段` : ''}${card.aoe ? ' · 群体' : ''}\n${card.desc}`;
 
   return (
     <div
@@ -2028,7 +2021,7 @@ function GameCard({
           color: 'var(--color-card-text-sub)',
         }}
       >
-        {wx ? `${KIND_LABEL[card.kind]}·${WX_CN[wx]}` : KIND_LABEL[card.kind]}
+        {wx ? `${t(KIND_KEY[card.kind])}·${t(WUXING_KEY[wx])}` : t(KIND_KEY[card.kind])}
         {card.hits > 1 ? ` ×${card.hits}段` : ''}
         {card.aoe ? ' ·群' : ''}
       </div>

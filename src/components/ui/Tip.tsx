@@ -106,17 +106,11 @@ export function Tip({ text, children, placement = 'top', style }: TipProps) {
 
 /* ============================== 术语释义文案 ============================== */
 
-/** 状态效果释义（长按/悬停状态图标时显示） */
-export const STATUS_TIP: Record<string, string> = {
-  burn: '灼烧\n每回合开始损失「层数 ×4」点气血，持续到回合数耗尽。',
-  frost: '霜寒\n减速并削弱护甲，是水行术法的收尾手段。',
-  freeze: '冻结\n下回合完全无法行动，是最强的控制。',
-  weak: '虚弱\n每层使造成的伤害 −15%（上限 −45%）。',
-  armorBreak: '破甲\n每层削减目标 15% 防御，是「性命双修」里的破防关键。',
-  paralyze: '麻痹\n每层 30% 概率令下一次攻击落空（上限 75%）。',
-  silence: '沉默\n无法使用术法牌，只能出物理牌与功能牌。',
-  flaw: '破绽\n下一次攻击必定暴击，且转化为无视防御的真实伤害。',
-};
+/**
+ * 【S1 归一】原此处的 `STATUS_TIP`（状态释义长文）已搬入 `src/i18n/locales/zh-CN.ts` 的
+ * `tip.status.<id>`，由 `STATUS_TIP_KEY` 显式映射 + `t()` 取值。
+ * 下方 `WUXING_TIP`（五行释义长文，量大）按本批范围**不动**，留待下一批（S2）处理。
+ */
 
 /** 五行释义 */
 export const WUXING_TIP: Record<string, string> = {

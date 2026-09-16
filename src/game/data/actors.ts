@@ -2,6 +2,15 @@ import type { Campaign, Character, Enemy } from '../types';
 
 /* ============================== 角色（3 名） ============================== */
 
+/**
+ * 角色立绘调色板（palette）。
+ *
+ * 【配色铁律】data 层不得出现 hex 字面量 —— 这里一律引用
+ * tokens.css「角色立绘配色（role palette）」分组里的 var(--color-role-*)。
+ * 取值本身是 CSS 变量字符串（类型仍是 string，见 types.ts 的 palette 声明），
+ * 由 Figure.tsx 透传给 SVG 的 fill / stroke **表现属性** ——
+ * 已实测 Chrome 下 SVG 表现属性支持 var() 解析（见交付回复的 CDP 实测证据）。
+ */
 export const CHARACTERS = [
   {
     id: 'luqingya', name: '陆青崖', rizhu: '庚金', wuxing: 'jin',
@@ -9,7 +18,7 @@ export const CHARACTERS = [
     hp: 120, atk: 22, def: 8,
     faction: '散修野士',
     lore: '白天在便利店夜班收银，深夜拎着唐刀穿行在写字楼的消防通道里。',
-    palette: { robe: '#0b2e59', trim: '#ca6924', hair: '#1a1f2b' },
+    palette: { robe: 'var(--color-role-shiqing)', trim: 'var(--color-role-hupo)', hair: 'var(--color-role-yaqing)' },
   },
   {
     id: 'sujiangxue', name: '苏绛雪', rizhu: '癸水', wuxing: 'shui',
@@ -17,7 +26,7 @@ export const CHARACTERS = [
     hp: 105, atk: 18, def: 10,
     faction: '道门正宗',
     lore: '正一派最年轻的持镜弟子，手机里存着三百个心猿的档案编号。',
-    palette: { robe: '#d6ecff', trim: '#0b2e59', hair: '#1a1f2b' },
+    palette: { robe: 'var(--color-role-yuebai)', trim: 'var(--color-role-shiqing)', hair: 'var(--color-role-yaqing)' },
   },
   {
     id: 'xiewujiu', name: '谢无咎', rizhu: '丙火', wuxing: 'huo',
@@ -25,7 +34,7 @@ export const CHARACTERS = [
     hp: 95, atk: 25, def: 5,
     faction: '自在天',
     lore: '不站任何一边，只遵循自己的道。滑板袋里那把苗刀从来没洗过血。',
-    palette: { robe: '#c23b22', trim: '#f5c518', hair: '#1a1f2b' },
+    palette: { robe: 'var(--color-role-zhuhong)', trim: 'var(--color-role-minghuang)', hair: 'var(--color-role-yaqing)' },
   },
 ] satisfies readonly Character[];
 

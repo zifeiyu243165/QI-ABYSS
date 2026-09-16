@@ -7,6 +7,7 @@
  *   火 = 火焰纹　水 = 波浪纹　木 = 藤蔓纹　金 = 回纹（云雷）　土 = 龟裂纹
  */
 
+import { t, WUXING_KEY } from '../../i18n';
 import type { WuXing } from '../../game/types';
 
 export const WX_STROKE: Record<WuXing, string> = {
@@ -16,8 +17,6 @@ export const WX_STROKE: Record<WuXing, string> = {
   huo: 'var(--color-wx-huo)',
   tu: 'var(--color-wx-tu)',
 };
-
-const WX_NAME: Record<WuXing, string> = { jin: '金', mu: '木', shui: '水', huo: '火', tu: '土' };
 
 /**
  * 五行大图标：卡牌正中央的巨大半透明纹样。
@@ -113,7 +112,7 @@ export function WuXingSeal({ wuxing, size = 18 }: { wuxing: WuXing; size?: numbe
         lineHeight: 1,
       }}
     >
-      {WX_NAME[wuxing]}
+      {t(WUXING_KEY[wuxing])}
     </span>
   );
 }
@@ -260,14 +259,3 @@ export function StatusGlyph({ id, size = 13 }: { id: string; size?: number }) {
       return null;
   }
 }
-
-export const STATUS_CN: Record<string, string> = {
-  burn: '灼烧',
-  frost: '霜寒',
-  freeze: '冻结',
-  weak: '虚弱',
-  armorBreak: '破甲',
-  paralyze: '麻痹',
-  silence: '沉默',
-  flaw: '破绽',
-};

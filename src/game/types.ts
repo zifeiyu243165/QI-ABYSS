@@ -3,19 +3,17 @@
  * 约定：不使用 enum（tsc erasableSyntaxOnly），一律用 as const 联合类型。
  */
 
+import type { Locale } from '../i18n/locale-store';
+
 /* ============================== 基础枚举 ============================== */
 
-/** 五行 */
+/**
+ * 五行。
+ * 【本批变更】此处原本还有一份 `WU_XING_LABEL: Record<WuXing, string>` 中文名表，
+ * 但全项目 0 引用（死代码）。五行中文名的单一真源已归一为 `src/i18n` 的 `label.wuxing.*`
+ * （经 `WUXING_KEY` 显式映射访问），故删除该副本。
+ */
 export type WuXing = 'jin' | 'mu' | 'shui' | 'huo' | 'tu';
-
-/** 五行中文名 */
-export const WU_XING_LABEL: Record<WuXing, string> = {
-  jin: '金',
-  mu: '木',
-  shui: '水',
-  huo: '火',
-  tu: '土',
-};
 
 /** 炁脉 */
 export type QiType = 'yang' | 'yin';
@@ -572,4 +570,6 @@ export interface SaveData {
   selectedCharacterId: string;
   equipment: Record<string, [string | null, string | null]>;
   fxLevel: 'lavish' | 'standard' | 'simple';
+  /** 界面语言（S5：存档版本 v2 新增；本批唯一 locale 为 zh-CN，由 migrateSave 兜底补全） */
+  locale: Locale;
 }

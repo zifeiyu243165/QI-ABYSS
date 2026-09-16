@@ -98,6 +98,34 @@
   --color-card-text-sub: #6b5b45;    /* 次级说明 */
   --color-card-title: #8a2b16;       /* 卡牌标题 · 深朱 */
 
+  /* ==========================================================================
+     角色立绘配色（role palette）
+     --------------------------------------------------------------------------
+     用途：src/game/data/actors.ts 的 palette{robe,trim,hair}，以及
+           src/components/svg/Figure.tsx 的程序化 SVG 立绘，统一从本组取色。
+     为什么单独成组：角色调色板属「数据」（角色设定），与「主题语义」（五行 / 炁 /
+           面板材质）解耦 —— 本组是一本「角色色卡」。将来角色变多，只需在这本
+           色卡里挑色，不会因为多一个角色就把色卡本撑爆（故**不做**「角色 × 部位」命名）。
+     取值策略：与既有色阶同值者一律用 var() 转发（本文件既有的 --color-yang /
+           --color-shield 等语义别名即是同一做法），从而**不重复定义 hex**；
+           只有「肤色 / 肤色高光」是此前色卡本没有的新增色值，才写 hex。
+     同值合并：#1a1f2b 被三名角色发色 + 立绘投影共用，只此一枚 --color-role-yaqing；
+           石青既作陆青崖衣袍、又作苏绛雪描边，也只此一枚 --color-role-shiqing
+           （不给「衣袍系列 / 描边系列」各起一个名字，否则就是同值不同名）。
+     ========================================================================== */
+
+  /* ---- 角色衣袍主色 / 描边（共用一本色卡，一色一名） ---- */
+  --color-role-shiqing: var(--color-shiqing);     /* 石青 · 陆青崖衣袍 / 苏绛雪描边 */
+  --color-role-yuebai: var(--color-yuebai);       /* 月白 · 苏绛雪衣袍 */
+  --color-role-zhuhong: var(--color-zhuhong);     /* 朱红 · 谢无咎衣袍 */
+  --color-role-hupo: var(--color-hupo);           /* 琥珀 · 陆青崖描边 */
+  --color-role-minghuang: var(--color-minghuang); /* 明黄 · 谢无咎描边 */
+
+  /* ---- 角色发色 / 立绘投影 / 肤色（Figure.tsx 程序化立绘） ---- */
+  --color-role-yaqing: var(--color-yaqing);       /* 鸦青 · 三角色发色共用 + 立绘投影（16% 透明） */
+  --color-role-skin: #e8c9a8;                      /* 肤色（新增） */
+  --color-role-skin-light: #f2d8bb;                /* 肤色高光（新增） */
+
   /* ---- 版面 ---- */
   --screen-w: 390px;
   --screen-h: 844px;

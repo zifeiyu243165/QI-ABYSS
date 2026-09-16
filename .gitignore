@@ -59,3 +59,6 @@ public/art/_raw_backup
 public/art/_cut
 # 抠图脚本 scripts/抠图.mjs 的原图备份（6MB+ 原始大图，可随时重新生图）
 _原图备份/
+
+# 事故恢复期：损坏的旧 .git 备份目录（确认恢复无误后即可删除）
+.git.broken-*/

@@ -16,6 +16,8 @@ import {
 import { CARD_MAP } from '../data/cards';
 import { SOLAR_TERM_MAP } from '../data/world';
 import { STATUS_BEHAVIOR } from '../data/statuses';
+// 【S1 跟进】STATUS_BEHAVIOR 的中文名已改为文案键 labelKey，断言改用 t(labelKey) 校验非空。
+import { STATUS_LABEL_KEY, t } from '../../i18n';
 
 /** 手牌上限的测试别名：改动 HAND_LIMIT 时测试跟着走，不用逐处替换字面量 */
 const HAND_LIMIT_TEST = HAND_LIMIT;
@@ -968,7 +970,10 @@ describe('守卫：状态行为注册表与穷尽性工具', () => {
     for (const id of ids) {
       const b = STATUS_BEHAVIOR[id];
       expect(b).toBeTruthy();
-      expect(typeof b.label).toBe('string');
+      // labelKey 必须存在且指向同一真源键，且 t() 取得到非空中文名（不得放宽既有断言强度）
+      expect(typeof b.labelKey).toBe('string');
+      expect(b.labelKey).toBe(STATUS_LABEL_KEY[id]);
+      expect(t(STATUS_LABEL_KEY[id]).length).toBeGreaterThan(0);
       expect(b.effect.length).toBeGreaterThan(0);
     }
     expect(Object.keys(STATUS_BEHAVIOR).length).toBe(8);

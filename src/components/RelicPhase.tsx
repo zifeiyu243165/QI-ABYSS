@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import type { BattleAction } from '../game/engine/battle';
 import type { BattleState, Card } from '../game/types';
 import { RELIC_LOTUS_THRESHOLD, RELIC_QI_GAIN, TANCHEN_SHIELD_PER_CARD, TANCHEN_STEAL_MIN } from '../game/constants';
+import { KIND_KEY, t } from '../i18n';
 import { playSfx } from '../game/audio';
 import { Tip } from './ui/Tip';
 
@@ -140,7 +141,7 @@ export function RelicPhase({
       setMarked((prev) => {
         if (prev.includes(uid)) return prev.filter((x) => x !== uid);
         if (prev.length >= quota) {
-          setHint(`只需化去 ${quota} 张 —— 先取消一张再选别的`);
+          setHint(t('ui.relic.hint.quota', { count: quota }));
           return prev;
         }
         return [...prev, uid];
@@ -258,7 +259,8 @@ export function RelicPhase({
           const isMarked = marked.includes(uid);
           const y2 = yieldOf(c);
           const dragging = dragUid === uid;
-          const kindCN = c.kind === 'physical' ? '物理' : c.kind === 'spell' ? '术法' : '功能';
+          // 【S1 归一】卡片类别中文名统一走 label.kind.<id>
+          const kindCN = t(KIND_KEY[c.kind]);
           return (
             <div
               key={uid}
@@ -409,8 +411,8 @@ export function RelicPhase({
             text={
               `归墟\n把点选好的牌一次化去。\n` +
               (ready
-                ? `已选够 ${quota} 张，按下去即刻完成归墟。`
-                : `还需再点选 ${quota - marked.length} 张 —— 弃哪几张由你决定，印章只负责执行。`)
+                ? t('ui.relic.tip.ready', { count: quota })
+                : t('ui.relic.tip.pending', { count: quota - marked.length }))
             }
             placement="top"
           >

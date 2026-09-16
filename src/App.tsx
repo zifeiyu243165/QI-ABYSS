@@ -5,6 +5,7 @@ import { SAVE_KEY, SAVE_VERSION } from './game/constants';
 import { battleReducer, createBattleState } from './game/engine/battle';
 import { CAMPAIGNS, CHARACTERS } from './game/data/actors';
 import { IMPLEMENTED_TERMS, LUNAR_MONTHS, SOLAR_TERM_MAP } from './game/data/world';
+import { DEFAULT_LOCALE, migrateSave } from './i18n';
 import { BattleScreen } from './components/BattleScreen';
 import { IntroSequence, LoadoutScreen, MainScreen, ResultScreen } from './components/Screens';
 import { DamageNumberLayer, FxLayer, ParryGlyph } from './components/fx/Effects';
@@ -22,15 +23,17 @@ const DEFAULT_SAVE: SaveData = {
     [CHARACTERS[2]!.id]: ['jian', 'wuleiling'],
   },
   fxLevel: 'lavish',
+  locale: DEFAULT_LOCALE,
 };
 
 function loadSave(): SaveData {
   try {
     const raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return DEFAULT_SAVE;
-    const data = JSON.parse(raw) as SaveData;
-    if (data.version !== SAVE_VERSION) return DEFAULT_SAVE; // 版本迁移占位
-    return { ...DEFAULT_SAVE, ...data };
+    // 【S5】平滑迁移：版本升级不再清空玩家进度。
+    // 旧实现「data.version !== SAVE_VERSION → 返回 DEFAULT_SAVE」会把通关记录与装备全部抹掉；
+    // 现交给 migrateSave（纯函数，见 src/i18n/save-migration.ts）逐字段合并 + 补 locale。
+    return migrateSave(JSON.parse(raw), DEFAULT_SAVE);
   } catch {
     return DEFAULT_SAVE;
   }
