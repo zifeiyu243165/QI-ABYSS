@@ -6,6 +6,7 @@
 
 import { forwardRef, useEffect, useImperativeHandle, useRef } from 'react';
 import type { DamageNumber } from '../../game/types';
+import { artUrl } from '../battle/artAssets';
 
 const WX_COLOR: Record<string, string> = {
   jin: '#d9b45b',
@@ -195,7 +196,16 @@ export const FxLayer = forwardRef<FxHandle, FxLayerProps>(function FxLayer(
 
 /* ============================== 伤害数字 ============================== */
 
-export function DamageNumberLayer({ numbers }: { numbers: DamageNumber[] }) {
+/**
+ * 伤害数字层。
+ *
+ * @param numbers  本帧要飘的数字
+ * @param backdrop 可选：飘字底素材文件名（定尺寸装饰底，如 `UI.dmgBackdrop`）。
+ *   【缺省 `undefined` → 行为与既有完全一致】：DOM 里只有原来的数字节点，不注入任何叠加节点。
+ *   传入时按「基底 + 叠加层」兄弟结构铺在数字**之下**（数字自带 `textShadow`，底板纯装饰；
+ *   素材缺失时本层渲染为空，数字观感不变）—— 底座随数字实际尺寸缩放，故用 `inset: 0` + `100% 100%`。
+ */
+export function DamageNumberLayer({ numbers, backdrop }: { numbers: DamageNumber[]; backdrop?: string }) {
   return (
     <div style={{ position: 'absolute', inset: 0, pointerEvents: 'none', zIndex: 60 }}>
       {numbers.map((n) => {
@@ -205,6 +215,13 @@ export function DamageNumberLayer({ numbers }: { numbers: DamageNumber[] }) {
             : n.kind === 'true'
               ? 'var(--color-gaosu)'
               : WX_COLOR[n.kind] ?? 'var(--color-gaosu)';
+        const label = (
+          <>
+            {n.kind === 'heal' ? '+' : ''}
+            {n.amount}
+            {n.crit && <span style={{ color: 'var(--color-minghuang)', fontSize: 20 }}> 暴击</span>}
+          </>
+        );
         return (
           <div
             key={n.id}
@@ -222,9 +239,25 @@ export function DamageNumberLayer({ numbers }: { numbers: DamageNumber[] }) {
               whiteSpace: 'nowrap',
             }}
           >
-            {n.kind === 'heal' ? '+' : ''}
-            {n.amount}
-            {n.crit && <span style={{ color: 'var(--color-minghuang)', fontSize: 20 }}> 暴击</span>}
+            {backdrop ? (
+              <>
+                <span
+                  aria-hidden
+                  style={{
+                    position: 'absolute',
+                    inset: 0,
+                    zIndex: 0,
+                    backgroundColor: 'transparent',
+                    backgroundImage: `url(${artUrl(backdrop)})`,
+                    backgroundRepeat: 'no-repeat',
+                    backgroundSize: '100% 100%',
+                  }}
+                />
+                <span style={{ position: 'relative', zIndex: 1 }}>{label}</span>
+              </>
+            ) : (
+              label
+            )}
           </div>
         );
       })}

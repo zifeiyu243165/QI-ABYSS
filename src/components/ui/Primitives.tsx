@@ -79,6 +79,9 @@ function CornerMarks({ color }: { color: string }) {
 
 /* ============================== 玉牌按钮 ============================== */
 
+/** 按钮描边宽（px）—— 素材叠加层要按同一宽度外扩，才能盖住整条边框盒 */
+const JADE_BORDER_W = 1.5;
+
 export function JadeButton({
   children,
   onClick,
@@ -86,6 +89,7 @@ export function JadeButton({
   disabled,
   style,
   size = 'md',
+  skin,
 }: {
   children: React.ReactNode;
   onClick?: () => void;
@@ -94,6 +98,22 @@ export function JadeButton({
   disabled?: boolean;
   style?: React.CSSProperties;
   size?: 'sm' | 'md' | 'lg';
+  /**
+   * 可选：素材文件名（9S 九宫格，取 `SLICE.jadeButton`）。
+   *
+   * 【向后兼容铁律】**缺省 `undefined` → 行为与外观与既有完全一致**：DOM 仍是纯文字子节点、
+   * 不注入任何叠加层、不追加 `position`。`Screens.tsx`（主界面/编队/结算）复用本组件但**不传** `skin`，
+   * 因此外观零变化 —— 战斗美术绝不允许污染外围界面。
+   *
+   * 传入时按「基底 CSS 层 + 透明叠加层」兄弟结构叠加：基底 = 本按钮自身的渐变 + 描金边 + 圆角
+   * （素材 404 / 未生成时唯一可见者），叠加层 `background-color: transparent`，内容包一层
+   * `position:relative` 的 span 压在图之上。
+   *
+   * 【禁用可辨性】灰玉（`ui_玉按钮_灰`）本身是浅色玉牌，单靠 `opacity: 0.7` 会显得「只是淡了」。
+   * 故传入 `skin` 且 `disabled` 时，再叠一层 `rgba(30,24,16,0.35)` 遮罩（压在素材之上、文字之下），
+   * 把灰玉压成中灰死色，同时保留既有那行浅灰标签的可读性 —— 这是本组件对「不可用」的唯一增量表达。
+   */
+  skin?: string;
 }) {
   const pad = size === 'lg' ? '14px 0' : size === 'sm' ? '6px 10px' : '10px 0';
   const fs = size === 'lg' ? 17 : size === 'sm' ? 11 : 13;
@@ -127,17 +147,48 @@ export function JadeButton({
         letterSpacing: 3,
         background: bg,
         color: fg,
-        border: `1.5px solid ${border}`,
+        border: `${JADE_BORDER_W}px solid ${border}`,
         boxShadow: disabled
           ? 'none'
           : '0 2px 6px rgba(120,90,40,0.26), inset 0 1px 0 rgba(255,246,220,0.6)',
         opacity: disabled ? 0.7 : 1,
         textShadow: disabled || variant === 'ghost' ? 'none' : '0 1px 2px rgba(80,20,10,0.5)',
         transition: 'transform 120ms, box-shadow 120ms',
+        // 有 skin 才需要定位上下文；缺省时不追加任何属性，保证既有调用方渲染完全一致
+        ...(skin ? { position: 'relative' as const } : {}),
         ...style,
       }}
     >
-      {children}
+      {skin ? (
+        <>
+          {/* ① 叠加层：玉牌素材（9S）—— 外扩一个描边宽，使其边框盒与按钮边框盒重合 */}
+          <ArtLayer
+            fileName={skin}
+            mode="slice"
+            slice={SLICE.jadeButton}
+            zIndex={0}
+            style={{ inset: -JADE_BORDER_W }}
+          />
+          {/* ② 禁用遮罩：仅「有素材且禁用」时出现，把浅色灰玉压成明确的死色 */}
+          {disabled && (
+            <span
+              aria-hidden
+              style={{
+                position: 'absolute',
+                inset: -JADE_BORDER_W,
+                zIndex: 1,
+                pointerEvents: 'none',
+                borderRadius: 6,
+                background: 'rgba(30,24,16,0.35)',
+              }}
+            />
+          )}
+          {/* ③ 内容层：压在图与遮罩之上 */}
+          <span style={{ position: 'relative', zIndex: 2 }}>{children}</span>
+        </>
+      ) : (
+        children
+      )}
     </button>
   );
 }

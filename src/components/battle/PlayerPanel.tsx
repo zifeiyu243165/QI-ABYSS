@@ -2,8 +2,9 @@
  * 我方面板（T04 · 拆分②）。
  *
  * 【来源】自 `BattleScreen.tsx` 我方面板区块**逐字搬迁**：高度 104 / flex `0 0 104px` /
- * gap 8 / padding `0 10px` / `margin:0 8px` / `borderRadius:8` / 渐变底 / `border:1.5px solid
+ * gap 8 / `margin:0 8px` / `borderRadius:8` / 渐变底 / `border:1.5px solid
  * var(--color-miaojin)` / `boxShadow` / `zIndex:10` 一律保留。
+ * 【R2 修复】唯一改动：外层 `padding` 由 `'0 10px'` 改为 `'0 22px 0 10px'`，让内容避让右描金框饰。
  *
  * 【接入素材】
  * - `ui_我方面板`（9S）：左上头像凹槽需与 `<CharacterFigure size={84}>` 对齐。
@@ -56,7 +57,10 @@ export function PlayerPanel({ state, char }: PlayerPanelProps) {
         display: 'flex',
         alignItems: 'center',
         gap: 8,
-        padding: '0 10px',
+        // 【R2 修复】右侧留出描金框饰宽度 22px（= SLICE.playerPanel 右框饰宽度），
+        // 让内容避让右框饰 —— 否则最右列（width:60 居中）的 combo.skillName「赤焰斩」右半会被框饰压住。
+        // 降级态（素材缺失）内容左移 12px，无害。面板高 104 / margin / borderRadius / gap 等魔法数字一律不动。
+        padding: '0 22px 0 10px',
         margin: '0 8px',
         borderRadius: 8,
         background: 'linear-gradient(160deg, rgba(251,247,236,0.96), rgba(236,217,171,0.9))',

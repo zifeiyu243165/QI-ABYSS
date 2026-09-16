@@ -23,9 +23,11 @@
  *
  * 【关于「孤儿键」】
  * `src/i18n/i18n.test.ts` 的孤儿键扫描要求「每个叶子键都在 src/** 里被**字面量**引用」。
- * 本批新增的键**尚未被组件引用**（组件迁移在 T03–T08），故在文件末尾用 `BATTLE_KEY_LEDGER`
- * 逐条字面量登记；T03–T08 把对应组件改走 `t()` 之后，这些键即被真实引用，
- * 届时可删除 `BATTLE_KEY_LEDGER`。
+ * T03–T08 已把战斗屏及其**全部**子组件（TopBar / StanceBar / PlayerPanel / QiResource /
+ * EnemyZone / EnemyInfoPanel / IntentCard / HandArea / GameCard / OperationBar / ParryPanel /
+ * 两个交互 Hook）改走 `t()`，`ui.battle.*` 与 `tip.battle.*` 的每个键都落到真实引用点，
+ * 原先用于临时登记的 `BATTLE_KEY_LEDGER` 已按本文件原计划**整体删除**（删除后仍由真实引用撑着
+ * 孤儿键扫描；今后谁再新增未引用的死键，`vitest` 会直接报出来）。
  *
  * 结构是 `as const`：`src/i18n/types.ts` 用它反推 `MessageKey`，改这里即可让全项目键类型同步。
  */
@@ -348,128 +350,3 @@ export const zhCN = {
     },
   },
 } as const;
-
-/**
- * 孤儿键登记台账（临时）。
- *
- * 【为什么存在】`src/i18n/i18n.test.ts` 的孤儿键扫描要求「zh-CN 的每个叶子键都在 src/** 里
- * 被**字面量**引用过」（正则：`['"\`]<键>['"\`]`）。本批（S2a）只建词表、**不改组件**，
- * 因此 `ui.battle.*` / `tip.battle.*` 暂时没有任何真实引用点，会被判为「死键」。
- * 这里把它们逐条以字面量登记，既满足扫描，也作为 T03–T08 迁移时的对照清单。
- *
- * 【何时删除】T03–T08 把 `BattleScreen.tsx` 及其子组件改走 `t()`、末日键未被引用后，
- * 本台账即可整体删除（删除后仍会有真实引用撑着孤儿键扫描）。
- *
- * 注意：本数组**不在 `zhCN` 对象内**（否则 flatten 会把数组项也当成叶子键）。
- */
-export const BATTLE_KEY_LEDGER = [
-  'ui.battle.turn',
-  'ui.battle.retreat',
-  'ui.battle.retreat-action',
-  'ui.battle.term',
-  'ui.battle.target',
-  'ui.battle.stance-confirm',
-  'ui.battle.hp',
-  'ui.battle.yang',
-  'ui.battle.yin',
-  'ui.battle.yang-essence',
-  'ui.battle.yin-essence',
-  'ui.battle.momentum',
-  'ui.battle.diff',
-  'ui.battle.wuxing',
-  'ui.battle.wuxing-generate',
-  'ui.battle.wuxing-opening',
-  'ui.battle.blade-stacks',
-  'ui.battle.hand-empty',
-  'ui.battle.hint',
-  'ui.battle.hint-inline',
-  'ui.battle.parry-perfect',
-  'ui.battle.parry-early',
-  'ui.battle.parry-miss',
-  'ui.battle.parry-now',
-  'ui.battle.parry-charging',
-  'ui.battle.parry-button',
-  'ui.battle.parry-hint',
-  'ui.battle.play-card',
-  'ui.battle.fuse',
-  'ui.battle.fuse-merge',
-  'ui.battle.fuse-none',
-  'ui.battle.regulate-used',
-  'ui.battle.regulate-telegraph',
-  'ui.battle.regulate',
-  'ui.battle.regulate-full',
-  'ui.battle.regulate-short',
-  'ui.battle.end-turn',
-  'ui.battle.relic-ghost',
-  'ui.battle.card-unfusable',
-  'ui.battle.shield-tag',
-  'ui.battle.boss',
-  'ui.battle.grade-base',
-  'ui.battle.grade-art',
-  'ui.battle.grade-dire',
-  'ui.battle.grade-kill',
-  'ui.battle.card-hits',
-  'ui.battle.card-aoe',
-  'ui.battle.card-fusable',
-  'ui.battle.ultimate',
-  'tip.battle.month',
-  'tip.battle.month-defense-mul',
-  'tip.battle.month-defense-none',
-  'tip.battle.term',
-  'tip.battle.term-implemented',
-  'tip.battle.term-pending',
-  'tip.battle.turn',
-  'tip.battle.retreat',
-  'tip.battle.stance',
-  'tip.battle.stance-active',
-  'tip.battle.stance-pending',
-  'tip.battle.stance-idle',
-  'tip.battle.stance-confirm',
-  'tip.battle.stance-confirm-switched',
-  'tip.battle.stance-confirm-pending',
-  'tip.battle.stance-confirm-none',
-  'tip.battle.day-master',
-  'tip.battle.ten-gods',
-  'tip.battle.ten-gods-pending',
-  'tip.battle.hp',
-  'tip.battle.shield-impact',
-  'tip.battle.yang-essence',
-  'tip.battle.yin-essence',
-  'tip.battle.momentum',
-  'tip.battle.diff',
-  'tip.battle.spell-stance',
-  'tip.battle.spell-stance-generate',
-  'tip.battle.spell-stance-opening',
-  'tip.battle.blade-stacks',
-  'tip.battle.combo',
-  'tip.battle.hint',
-  'tip.battle.parry',
-  'tip.battle.block',
-  'tip.battle.play',
-  'tip.battle.play-ok',
-  'tip.battle.play-disabled',
-  'tip.battle.play-none',
-  'tip.battle.fuse',
-  'tip.battle.fuse-target',
-  'tip.battle.fuse-none',
-  'tip.battle.regulate',
-  'tip.battle.regulate-done',
-  'tip.battle.regulate-telegraph',
-  'tip.battle.regulate-do',
-  'tip.battle.regulate-full',
-  'tip.battle.regulate-short',
-  'tip.battle.end-turn',
-  'tip.battle.log',
-  'tip.battle.enemy-hp',
-  'tip.battle.enemy-shield',
-  'tip.battle.grade-base',
-  'tip.battle.grade-art',
-  'tip.battle.grade-dire',
-  'tip.battle.grade-kill',
-  'tip.battle.intent',
-  'tip.battle.card',
-  'tip.battle.card-hits',
-  'tip.battle.card-aoe',
-  'tip.battle.cost-yang',
-  'tip.battle.cost-yin',
-] as const;

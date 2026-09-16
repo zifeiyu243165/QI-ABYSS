@@ -9,7 +9,13 @@
  * - 新的魔法数字先问「能不能进本文件」，但**内联表达式里的既有魔法数字**（如 344）不得顺手整理。
  */
 
-/** 资源路径基址（Vite base，构建后为相对路径）。素材路径一律经 `artAssets.artUrl()` 拼装。 */
+/**
+ * 资源路径基址（Vite base，构建后为相对路径）。素材路径一律经 `artAssets.artUrl()` 拼装。
+ *
+ * 【T09 去死导出】此前本常量在 `constants.ts` 之外**无人引用**（主壳改走 `artUrl()` 后即成空转）。
+ * 处置：让 `artUrl()` 复用它 —— 本常量因此成为「base 的单一来源」，`import.meta.env.BASE_URL`
+ * 在整个 battle/ 模块里只出现这一次，文档注释与代码行为也终于一致（不删是为了保住这个具名概念）。
+ */
 export const BASE = import.meta.env.BASE_URL;
 
 /** 阴阳炁条在屏幕上的大致位置：归墟流光一律飞向这里（与 CSS 变量 --dx/--dy 配合） */

@@ -9,10 +9,11 @@
  */
 import type { CSSProperties } from 'react';
 import type { Card, StatusId, WuXing } from '../../game/types';
+import { BASE } from './constants';
 
 /** 拼接素材 URL：`<BASE>art/<fileName>`。全项目**唯一**允许拼素材路径的地方。 */
 export function artUrl(fileName: string): string {
-  return `${import.meta.env.BASE_URL}art/${fileName}`;
+  return `${BASE}art/${fileName}`;
 }
 
 /** 界面零件素材名表（`public/art/` 下的 `ui_*.png`，见设计 §三 接入对照表） */
@@ -41,6 +42,17 @@ export const UI = {
   parryRed: 'ui_弹反区_红.png',
   dmgBackdrop: 'ui_伤害飘字底.png',
   emptySlot: 'ui_空手牌槽.png',
+} as const;
+
+/**
+ * 背景素材名（`bg_*.png`）。
+ *
+ * 【为何进本文件】T07/T08 之前，战斗屏的背景名是写死在 `BattleScreen.tsx` 里的模板字符串
+ * （`` `url(${BASE}art/bg_战场.png)` ``）—— 那是「素材文件名越界」（§八 明令素材路径只能经
+ * 本文件的 `artUrl()`/`UI.*` 拼装）。本次拆分顺手把它收归本表，使 `BattleScreen` 不再出现裸素材名。
+ */
+export const BG = {
+  battlefield: 'bg_战场.png',
 } as const;
 
 /** 五行印素材名（替换 `svg/Glyphs.tsx` 的 `WuXingSeal` 汉字色块，见设计 U5） */

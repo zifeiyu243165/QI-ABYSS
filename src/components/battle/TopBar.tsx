@@ -95,22 +95,44 @@ export function TopBar({ month, term, monthId, termId, turn, onExit }: TopBarPro
 
         <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 12 }}>
           <Tip text={t('tip.battle.turn', { turn })} placement="bottom">
-            {/* 回合计数牌：素材作文字底板，z 低于文字 */}
+            {/*
+              回合计数牌：素材作文字底板，z 低于文字。
+              【R1 修复】原 `width:44` 死宽把「第 {turn} 回合」（fontSize 11 下约 56px）挤成两行，
+              且 `fit={{w:44,h:22}}` 把 927×720（含顶吊环 / 底流苏）强行压成 2.0 比例 → 椭圆压扁、流苏糊成一团。
+              现改为：定尺寸窗口 64×22 + `overflow:hidden`，仅取素材中部椭圆牌面。
+              窗口 64×22 的比例（2.91）恰等于椭圆牌面比例（927 / 318 ≈ 2.92），故图不被拉伸。
+              `fit={{w:64,h:50}}`：整图 927×720 缩到 64×50，缩放比 50/720≈0.0694，
+              牌面纵向区间（图内 y≈160..478，含描金边、不含顶环与底流苏）恰映射到窗口 22px；
+              再以 `top:-11`（=160×0.0694）上移，使椭圆端正居中于窗口，顶环 / 底流苏被裁掉。
+              文字 `whiteSpace:nowrap` 单行居中；窗口 `overflow:hidden` 只裁图，不裁文字。
+              文字字号由继承的 11 下调到 10.5：椭圆牌面内净宽约 54px，「第 N 回合」在 11px 下约 56px
+              会顶到内层描金边，10.5px 下约 53px → 两侧各留约 5px 净空。
+            */}
             <span
               style={{
                 position: 'relative',
                 display: 'inline-flex',
                 alignItems: 'center',
                 justifyContent: 'center',
-                width: 44,
+                width: 64,
                 height: 22,
+                overflow: 'hidden',
+                flex: '0 0 auto',
               }}
             >
-              <ArtLayer fileName={UI.turnPlaque} mode="fit" fit={{ w: 44, h: 22 }} zIndex={0} />
+              <ArtLayer
+                fileName={UI.turnPlaque}
+                mode="fit"
+                fit={{ w: 64, h: 50 }}
+                zIndex={0}
+                style={{ top: -11, left: 0, right: 'auto', bottom: 'auto' }}
+              />
               <span
                 style={{
                   position: 'relative',
                   zIndex: 1,
+                  whiteSpace: 'nowrap',
+                  fontSize: 10.5,
                   color: 'var(--color-miaojin-light)',
                   fontVariantNumeric: 'tabular-nums',
                   textShadow: '0 1px 3px rgba(0,0,0,0.85)',

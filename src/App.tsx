@@ -10,6 +10,7 @@ import { BattleScreen } from './components/BattleScreen';
 import { IntroSequence, LoadoutScreen, MainScreen, ResultScreen } from './components/Screens';
 import { DamageNumberLayer, FxLayer, ParryGlyph } from './components/fx/Effects';
 import type { FxHandle } from './components/fx/Effects';
+import { UI } from './components/battle/artAssets';
 
 type Screen = 'main' | 'loadout' | 'battle' | 'result';
 
@@ -127,7 +128,7 @@ export default function App() {
   return (
     <div className="screen-frame">
       <FxLayer ref={fxRef} width={390} height={844} fxLevel={save.fxLevel} weather={weather} />
-      <DamageNumberLayer numbers={battle.pendingNumbers} />
+      <DamageNumberLayer numbers={battle.pendingNumbers} backdrop={UI.dmgBackdrop} />
       <ParryGlyph show={battle.pendingParryGlyph} />
 
       <div

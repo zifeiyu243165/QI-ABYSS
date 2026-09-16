@@ -188,10 +188,15 @@ const CONST_EXEMPT = {
  * 随 S2/S3/S4 推进，迁移完成的文件从本清单**删除** —— 删除后该文件再出现中文即直接 error。
  * 注意：src/i18n/** 是文案真源，§9 扫描时整体排除，故不在清单内。
  * 行数为「剥离注释后仍含 CJK 的行数」，与检查口径一致。
+ *
+ * 【T09 收尾批次核对记录】本批为 P0 界面收尾，**未迁移任何界面文案**（所有新增/改动文件的
+ * 中文均在注释里，`stripComments` 剥离后为 0 行），故各条 `count` 与 `reason` 均维持不变。
+ * 逐文件以守卫自报的实际值比对：19 条待迁移全部**相等、无一条增长**，无需修正，也无条目归零。
+ * `src/components/BattleScreen.tsx` 条目已于上一批删除（其文案早先已迁入 i18n），本批确认
+ * 它**未**回归清单 —— 若今后有人在该壳写中文字面量，将直接计入 error。
  */
 const CJK_PENDING = {
-  'src/components/battle/artAssets.ts': { count: 37, reason: '素材文件名（中文）—— 非界面文案，与 src/game/audio.ts 同构。' },
-  'src/components/BattleScreen.tsx': { count: 57, reason: '本批未迁移（S2）：T03–T05 已把顶部/架势/我方/敌方四个分区的文案搬入 battle/ 子组件并改走 t()，主壳内残留的手牌区/操作栏/弹反区文案留待 T06–T09。' },
+  'src/components/battle/artAssets.ts': { count: 38, reason: '素材文件名（中文）—— 非界面文案，与 src/game/audio.ts 同构。T07 把战斗屏背景名 `bg_战场.png` 也收归本表（此前写死在 BattleScreen 里，属素材名越界），故 37 → 38。T09 接入 `ui_空手牌槽`（原本已在表内）后行数仍为 38，未新增文件名行。' },
   'src/components/fx/Effects.tsx': { count: 2, reason: '本批未迁移（S2）：特效层文案。' },
   'src/components/RelicPhase.tsx': { count: 13, reason: '本批未迁移（S2）：仅归墟面板的 kindCN 与 3 条带参提示已入表，其余文案留待下一批。' },
   'src/components/Screens.tsx': { count: 46, reason: '本批未迁移（S2）：外围界面（主界面/编队/结算/开场）文案留待下一批。' },
