@@ -10,6 +10,8 @@
  */
 
 import type React from 'react';
+import { ArtLayer } from '../battle/ArtLayer';
+import { nineSlice, SLICE } from '../battle/artAssets';
 
 /* ============================== 描金面板 ============================== */
 
@@ -160,6 +162,9 @@ export function FlowBar({
   showText = true,
   segments,
   shield = 0,
+  fill,
+  shieldFill,
+  frame,
 }: {
   value: number;
   cap: number;
@@ -171,6 +176,15 @@ export function FlowBar({
   segments?: boolean;
   /** 护盾值；> 0 时压缩血条并在右侧额外绘制护盾条 */
   shield?: number;
+  /**
+   * 可选：气血填充素材文件名（9S）。**缺省 undefined → 行为与既有完全一致**（仅走 CSS 渐变）。
+   * 传入时在渐变填充之上叠一层 `border-image` 九宫格，降级由「基底渐变始终在 DOM」保证。
+   */
+  fill?: string;
+  /** 可选：护盾填充素材文件名（9S）。缺省 → 护盾段仅走 CSS 渐变。 */
+  shieldFill?: string;
+  /** 可选：外框素材文件名（9S 中空框，叠最上）。缺省 → 不叠外框。 */
+  frame?: string;
 }) {
   const pct = cap > 0 ? Math.max(0, Math.min(1, value / cap)) : 0;
   const shieldVal = Math.max(0, Math.floor(shield ?? 0));
@@ -225,40 +239,78 @@ export function FlowBar({
       {label && (
         <span style={{ fontSize: 10, color: 'var(--color-card-text-sub)', width: 24 }}>{label}</span>
       )}
-      <div
-        style={{
-          flex: 1,
-          height,
-          background: 'rgba(120,100,70,0.2)',
-          borderRadius: height / 2,
-          overflow: 'hidden',
-          border: '1px solid rgba(212,168,67,0.5)',
-          display: 'flex',
-        }}
-      >
+      <div style={{ position: 'relative', flex: 1, height }}>
+        {/* ③ 基底 CSS 层：暗底轨道 + 金边 + 圆角 + 溢出裁剪，内含 CSS 双段渐变填充 */}
         <div
           style={{
-            width: `${(hasShield ? hpPct : pct) * 100}%`,
-            height: '100%',
-            background: color,
-            borderRadius: hasShield ? 0 : height / 2,
-            transition: 'width 280ms cubic-bezier(0.2,0.9,0.3,1)',
-            boxShadow: `0 0 8px ${color}`,
+            position: 'absolute',
+            inset: 0,
+            background: 'rgba(120,100,70,0.2)',
+            borderRadius: height / 2,
+            overflow: 'hidden',
+            border: '1px solid rgba(212,168,67,0.5)',
+            display: 'flex',
           }}
-        />
-        {hasShield && (
+        >
           <div
             style={{
-              width: `${shPct * 100}%`,
+              width: `${(hasShield ? hpPct : pct) * 100}%`,
               height: '100%',
-              // 松花绿护盾段，左侧一道亮边与血条切开
-              background: 'linear-gradient(90deg, var(--color-shield), var(--color-shield-light))',
-              borderLeft: '1.5px solid rgba(255,246,220,0.95)',
+              background: color,
+              borderRadius: hasShield ? 0 : height / 2,
               transition: 'width 280ms cubic-bezier(0.2,0.9,0.3,1)',
-              boxShadow: '0 0 8px rgba(123,182,97,0.9)',
+              boxShadow: `0 0 8px ${color}`,
+            }}
+          />
+          {hasShield && (
+            <div
+              style={{
+                width: `${shPct * 100}%`,
+                height: '100%',
+                // 松花绿护盾段，左侧一道亮边与血条切开
+                background: 'linear-gradient(90deg, var(--color-shield), var(--color-shield-light))',
+                borderLeft: '1.5px solid rgba(255,246,220,0.95)',
+                transition: 'width 280ms cubic-bezier(0.2,0.9,0.3,1)',
+                boxShadow: '0 0 8px rgba(123,182,97,0.9)',
+              }}
+            />
+          )}
+        </div>
+
+        {/* ① 叠加层：气血填充素材（9S）—— 叠在渐变之上，transparent 底不盖死基底 */}
+        {fill && (
+          <div
+            aria-hidden
+            style={{
+              position: 'absolute',
+              left: 0,
+              top: 0,
+              height: '100%',
+              width: `${(hasShield ? hpPct : pct) * 100}%`,
+              backgroundColor: 'transparent',
+              transition: 'width 280ms cubic-bezier(0.2,0.9,0.3,1)',
+              ...nineSlice(fill, SLICE.stripCaps),
             }}
           />
         )}
+        {/* ① 叠加层：护盾填充素材（9S）—— 起于血条右端 */}
+        {hasShield && shieldFill && (
+          <div
+            aria-hidden
+            style={{
+              position: 'absolute',
+              left: `${(hasShield ? hpPct : pct) * 100}%`,
+              top: 0,
+              height: '100%',
+              width: `${shPct * 100}%`,
+              backgroundColor: 'transparent',
+              transition: 'width 280ms cubic-bezier(0.2,0.9,0.3,1)',
+              ...nineSlice(shieldFill, SLICE.stripCaps),
+            }}
+          />
+        )}
+        {/* ① 叠加层：外框素材（9S 中空框，叠最上） */}
+        {frame && <ArtLayer fileName={frame} mode="slice" slice={SLICE.stripCaps} zIndex={3} />}
       </div>
       {showText && (
         <span

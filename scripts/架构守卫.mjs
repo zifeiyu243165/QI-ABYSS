@@ -190,7 +190,8 @@ const CONST_EXEMPT = {
  * 行数为「剥离注释后仍含 CJK 的行数」，与检查口径一致。
  */
 const CJK_PENDING = {
-  'src/components/BattleScreen.tsx': { count: 108, reason: '本批未迁移（S2）：组件层大批文案留待下一批；本批只动了 S1 涉及的那几处。' },
+  'src/components/battle/artAssets.ts': { count: 37, reason: '素材文件名（中文）—— 非界面文案，与 src/game/audio.ts 同构。' },
+  'src/components/BattleScreen.tsx': { count: 57, reason: '本批未迁移（S2）：T03–T05 已把顶部/架势/我方/敌方四个分区的文案搬入 battle/ 子组件并改走 t()，主壳内残留的手牌区/操作栏/弹反区文案留待 T06–T09。' },
   'src/components/fx/Effects.tsx': { count: 2, reason: '本批未迁移（S2）：特效层文案。' },
   'src/components/RelicPhase.tsx': { count: 13, reason: '本批未迁移（S2）：仅归墟面板的 kindCN 与 3 条带参提示已入表，其余文案留待下一批。' },
   'src/components/Screens.tsx': { count: 46, reason: '本批未迁移（S2）：外围界面（主界面/编队/结算/开场）文案留待下一批。' },

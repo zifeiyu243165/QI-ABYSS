@@ -7,12 +7,25 @@
  * - 叶子用**语义名**（`end-turn`），**禁止拼音**
  * - 插值占位写 `{name}`，参数名 ASCII 小驼峰
  *
- * 【本批（S0）只建立这些域】
+ * 【本批已建立的域】
  * - `label.*` 术语短名（按钮/角标/表头用的固定名词）—— S1 归一后各引用点改走 `t()`
- * - `ui.*`   界面文案 —— 本批只放 S1 触碰到的那些
- * - `tip.*`  释义长文 —— 本批只搬 `tip.status.*`（原 ui/Tip.tsx 的 STATUS_TIP）
+ * - `ui.*`   界面文案 —— S1 触碰到的，以及**本批（S2a）新增的战斗界面短文案**
+ * - `tip.*`  释义长文 —— `tip.status.*`（S1）与 **`tip.battle.*`（S2a 战斗界面全部 Tip）**
  *
- * 【本批不做】`components/**` 与 `data/**` 的大批文案（下一批 S2/S3），以及引擎战报日志（第三批 S4）。
+ * 【本批（S2a · 战斗界面词表扩张）只做「词表」】
+ * - 把 `src/components/BattleScreen.tsx`（含将迁出的 `EnemyInfoPanel` / `IntentCard` /
+ *   `GameCard` / `QiPip` / `KindGlyph` / `CardFace` 等子组件）里所有**玩家可见中文**抽为键，
+ *   新建 `ui.battle.*`（短文案）与 `tip.battle.*`（全部 Tip 长释义）两个域。
+ * - **本批不改任何组件**：`BattleScreen.tsx` 里暂时仍保留中文字面量（守卫 §9 会报 ⚠，
+ *   属已知待迁移债务）。组件迁移是 T03–T08 的事。
+ * - `\n` / `{…}` / 标点 / 空格（含「结 束 回 合」的半角字间空格，以及按钮里的全角字间空格 U+3000）
+ *   一律**逐字搬运**，禁止顺手润色。
+ *
+ * 【关于「孤儿键」】
+ * `src/i18n/i18n.test.ts` 的孤儿键扫描要求「每个叶子键都在 src/** 里被**字面量**引用」。
+ * 本批新增的键**尚未被组件引用**（组件迁移在 T03–T08），故在文件末尾用 `BATTLE_KEY_LEDGER`
+ * 逐条字面量登记；T03–T08 把对应组件改走 `t()` 之后，这些键即被真实引用，
+ * 届时可删除 `BATTLE_KEY_LEDGER`。
  *
  * 结构是 `as const`：`src/i18n/types.ts` 用它反推 `MessageKey`，改这里即可让全项目键类型同步。
  */
@@ -66,6 +79,111 @@ export const zhCN = {
         pending: '还需再点选 {count} 张 —— 弃哪几张由你决定，印章只负责执行。',
       },
     },
+
+    /**
+     * 战斗界面短文案（S2a 新增）。叶子用语义名；带参键用 `{name}`。
+     * 【逐字搬运】短文案里的字间空格（半角与全角空格 U+3000）一律不得改（例：结束回合 / 出牌 / 格挡三个按钮）。
+     */
+    battle: {
+      /** 天时条 · 回合标签（带参：当前回合数） */
+      turn: '第 {turn} 回合',
+      /** 撤退按钮 aria-label / 名词 */
+      retreat: '撤退',
+      /** 撤退按钮可见文字（含前缀 ✕ 与空格） */
+      'retreat-action': '✕ 撤退',
+      /** 天时条 · 炁候标签（带参：节气名） */
+      term: '炁候·{name}',
+      /** 敌人立绘上的目标角标（含前缀 ▼ 与空格） */
+      target: '▼ 目标',
+      /** 架势切换的确认按钮 */
+      'stance-confirm': '确认',
+      /** 我方面板气血条标签 */
+      hp: '气血',
+      /** 阴阳资源 · 阳 */
+      yang: '阳',
+      /** 阴阳资源 · 阴 */
+      yin: '阴',
+      /** 阳炁（带「炁」的完整名词，供调息文案拼装） */
+      'yang-essence': '阳炁',
+      /** 阴炁 */
+      'yin-essence': '阴炁',
+      /** 体修「势」短标签（含全角斜杠 ／） */
+      momentum: '势／{cap}',
+      /** 散修「阴阳差」短标签 */
+      diff: '阴阳差',
+      /** 法修「五行」短标签 */
+      wuxing: '五行',
+      /** 法修轮转态 · 相生 */
+      'wuxing-generate': '相生',
+      /** 法修轮转态 · 起手 */
+      'wuxing-opening': '起手',
+      /** 双兵刃叠层短标签 */
+      'blade-stacks': '纯阳 {stacks}/{cap}',
+      /** 手牌为空时的占位文字 */
+      'hand-empty': '手牌已空',
+      /** 教学提示按钮 aria-label */
+      hint: '操作提示',
+      /** 教学提示按钮旁的行内短提示 */
+      'hint-inline': '轻点或上拖卡牌选中 · 点红框牌合体',
+      /** 弹反结果 · 完美 */
+      'parry-perfect': '弹反成功！',
+      /** 弹反结果 · 过早 */
+      'parry-early': '过早 · 仅格挡',
+      /** 弹反结果 · 未格挡 */
+      'parry-miss': '未格挡',
+      /** 弹反窗口开启时的提示 */
+      'parry-now': '此刻！按下去',
+      /** 弹反蓄力中的提示（含省略号 …） */
+      'parry-charging': '蓄力中…等金色',
+      /** 格挡按钮（含字间全角空格 U+3000） */
+      'parry-button': '格　挡',
+      /** 格挡按钮下方的一行说明 */
+      'parry-hint': '金色区按下 = 完美弹反 · 红色区按下 = 减伤 60% · 一次只挡一记',
+      /** 出牌按钮（含字间全角空格 U+3000） */
+      'play-card': '出　牌',
+      /** 合并奥义（按钮名 / Tip 首行共用） */
+      fuse: '合并奥义',
+      /** 合并按钮（带参：可合体目标名） */
+      'fuse-merge': '合并 · {name}',
+      /** 已选一张但无同系可合体 */
+      'fuse-none': '无同系可合体',
+      /** 调息按钮 · 本回合已用 */
+      'regulate-used': '☯ 阴阳逆转（已用）',
+      /** 调息按钮 · 敌方前摇中 */
+      'regulate-telegraph': '☯ 阴阳逆转·前摇中',
+      /** 调息按钮 · 可用（带参：比例与收益） */
+      regulate: '☯ 阴阳逆转 {ratio}:{gain}',
+      /** 调息按钮 · 目标已满 */
+      'regulate-full': '☯ 阴阳逆转·目标已满',
+      /** 调息按钮 · 源炁不足（带参：不足的那一侧名） */
+      'regulate-short': '☯ 阴阳逆转·{side}不足',
+      /** 结束回合按钮（含字间空格，**逐字保留**） */
+      'end-turn': '结 束 回 合',
+      /** 归墟弃牌残影标签（带参：被弃牌名） */
+      'relic-ghost': '弃 {name}',
+      /** 不同系牌无法合体的警告（带参：两张牌名） */
+      'card-unfusable': '「{a}」×「{b}」不同系，无法合体',
+      /** 敌方信息板 · 护盾数值角标 */
+      'shield-tag': '盾{value}',
+      /** 敌方信息板 · 首领标签 */
+      boss: '首领',
+      /** 敌方意图品阶 · 常 */
+      'grade-base': '常',
+      /** 敌方意图品阶 · 技 */
+      'grade-art': '技',
+      /** 敌方意图品阶 · 凶 */
+      'grade-dire': '凶',
+      /** 敌方意图品阶 · 杀 */
+      'grade-kill': '杀',
+      /** 卡面类型行 · 多段（带参：段数） */
+      'card-hits': ' ×{hits}段',
+      /** 卡面类型行 · 群体（前置空格逐字保留） */
+      'card-aoe': ' ·群',
+      /** 卡面角标 · 可合体目标 */
+      'card-fusable': '可合体',
+      /** 卡面角标 · 奥义 */
+      ultimate: '奥义',
+    },
   },
 
   /** 释义长文（tip.*）：长按 / 悬停时显示的浮层文案，可含 \n 换行 */
@@ -81,5 +199,277 @@ export const zhCN = {
       silence: '沉默\n无法使用术法牌，只能出物理牌与功能牌。',
       flaw: '破绽\n下一次攻击必定暴击，且转化为无视防御的真实伤害。',
     },
+
+    /**
+     * 战斗界面全部 Tip 长释义（S2a 新增）。
+     * 【逐字搬运】`\n` 换行、标点、内嵌「」引号一律不得改；动态值改写为 `{name}` 占位。
+     * 对「运行时有条件分支」的 Tip：主键以 `{suffix}` / `{status}` 等占位收尾，
+     * 各分支文案另立 `<主键>-<变体>` 键（变体名同用小写 ASCII 语义名）。
+     */
+    battle: {
+      /* ---- 天时条 ---- */
+      /** 月令 Tip（带参：月令名 / 释义 / 末行） */
+      month: '月令·{label}\n{desc}\n{defense}',
+      /** 月令 Tip 末行 · 有防御倍率 */
+      'month-defense-mul': '本月防御倍率 ×{mul}',
+      /** 月令 Tip 末行 · 无加成 */
+      'month-defense-none': '本月防御无额外加成',
+      /** 节气 Tip（带参：节气名 / 季节 / 释义 / 末行） */
+      term: '节气·{name}（{season}）\n{desc}\n{status}',
+      /** 节气 Tip 末行 · 已实装 */
+      'term-implemented': '本节气效果已实装，会在符合条件时自动触发。',
+      /** 节气 Tip 末行 · 留位未实装 */
+      'term-pending': '本节气为留位数据，尚未实装效果。',
+      /** 回合数 Tip（带参：回合数） */
+      turn: '第 {turn} 回合\n你出牌或结束回合 → 敌方行动 → 进入下一回合。\n每回合抽牌并回炁。',
+      /** 撤退 Tip */
+      retreat: '撤退\n退出当前战斗，返回主界面（本局进度不保留）。',
+
+      /* ---- 架势条 ---- */
+      /** 架势按钮 Tip（带参：架势名 / 释义 / 后缀行） */
+      stance: '{name}\n{desc}{suffix}',
+      /** 架势 Tip 后缀 · 当前架势（以 \n 起） */
+      'stance-active': '\n（当前架势）',
+      /** 架势 Tip 后缀 · 已预选（以 \n 起） */
+      'stance-pending': '\n（已选中，按右侧「确认」才真正切换）',
+      /** 架势 Tip 后缀 · 未选中（以 \n 起） */
+      'stance-idle': '\n点击只是查看该架势，需再按右侧「确认」才会切换。',
+      /** 确认切换架势 Tip 头部（带参：末行 suffix） */
+      'stance-confirm': '确认切换架势\n架势决定整套打法，误触代价高，因此点选之后需要在这里再确认一次。\n{suffix}',
+      /** 确认 Tip 末行 · 本回合已切换 */
+      'stance-confirm-switched': '本回合已经切换过架势，下回合才能再换。',
+      /** 确认 Tip 末行 · 待确认（带参：架势名） */
+      'stance-confirm-pending': '确认后切换为「{name}」。',
+      /** 确认 Tip 末行 · 尚未预选 */
+      'stance-confirm-none': '尚未选中要切换的架势（点上方三个按钮预选）。',
+
+      /* ---- 我方面板 ---- */
+      /** 日主标签 Tip（带参：日主名） */
+      'day-master': '日主·{rizhu}\n该角色的本命五行，决定其感受节气与月令加成的方式。',
+      /** 十神 Tip（带参：名 / 类别 / 释义 / 后缀） */
+      'ten-gods': '十神·{name}（{category}）\n{desc}{suffix}',
+      /** 十神 Tip 后缀 · 未实装（以 \n 起） */
+      'ten-gods-pending': '\n（尚未实装，敬请期待）',
+      /** 气血 Tip（带参：当前/上限/护盾行） */
+      hp: '气血 {hp}/{maxHp}{shield}\n归零即战败。受击先扣护盾，再扣气血。',
+      /** 护盾行（以 \n 起；玩家与敌人气血 Tip 共用，带参：护盾值） */
+      'shield-impact': '\n护盾 {value} 点（优先被扣，条上绿色一段）',
+      /** 阳炁资源 Tip（带参：当前/上限） */
+      'yang-essence':
+        '阳炁 {value}/{cap}\n出物理牌消耗。攻击命中、调息可积累，是「性命双修」中炼「命」的一面。',
+      /** 阴炁资源 Tip（带参：当前/上限） */
+      'yin-essence': '阴炁 {value}/{cap}\n出术法牌消耗。受击与术法相生可积累，是炼「性」的一面。',
+      /** 体修「势」Tip（带参：当前层/上限） */
+      momentum:
+        '势 {shi}／{cap}\n体修专属资源：每打出一张物理牌积攒 1 层。\n满 {cap} 层解锁「破军」，下张物理牌造成 攻击×层数 的真实伤害。',
+      /** 散修「阴阳差」Tip（带参：差值） */
+      diff: '阴阳差 {diff}\n散修核心：阴阳炁差值越大，暴击率与暴击伤害越高。\n差值达上限触发「剑走偏锋」：本回合伤害 +100%，回合结束自损 30% 当前气血。',
+      /** 法修「五行轮转」Tip（带参：轮转态 / 相生顺序链） */
+      'spell-stance': '五行轮转：{state}\n法修按五行相生顺序（{chain}）连续出术法牌，每张费用减半且伤害递增 10%。',
+      /** 法修轮转态 · 相生 */
+      'spell-stance-generate': '相生（已进入轮转）',
+      /** 法修轮转态 · 起手 */
+      'spell-stance-opening': '起手（本回合尚未出术法）',
+      /** 双兵刃「纯阳开天」叠层 Tip（带参：当前/上限） */
+      'blade-stacks': '纯阳开天 {stacks}/{cap}\n双持兵刃时积累的叠层，满层释放「纯阳开天」奥义。',
+      /** 连携技 Tip（带参：技能名） */
+      combo: '连携技「{name}」\n同时佩戴对应兵刃与法器时生效的被动。',
+
+      /* ---- 手牌区 ---- */
+      /** 教学提示（?）Tip */
+      hint: '操作提示\n· 轻点或上拖卡牌 = 选中，整排手牌会摊开\n· 再点一次 / 下拖 = 收回手牌\n· 牌左边缘的金条 = 手牌里有能跟它合体的牌\n· 选中后，脉动朱红环 = 点它即刻合体成奥义\n· 选好之后按下方「出牌」打出',
+
+      /* ---- 弹反区 ---- */
+      /** 弹反时序判定条 Tip */
+      parry: '弹反时序\n游标自左向右划过：\n· 红色区按下 = 普通格挡（减伤 60%）\n· 金色区按下 = 完美弹反（免疫这一记攻击并追击）\n· 一次弹反只能抵挡一记攻击，多只敌人同时出手时其余照常命中',
+      /** 格挡按钮 Tip（注意：按钮本身是「格」+全角空格 U+3000+「挡」，而此处 Tip 首行为普通「格挡」） */
+      block: '格挡\n敌方出招前的瞬间点击：\n· 游标进入金色区点击 = 完美弹反（免疫这一记）\n· 红色区点击 = 普通格挡（减伤 60%）\n注意：一次只能抵挡一记攻击。',
+
+      /* ---- 操作栏 ---- */
+      /** 出牌按钮 Tip（带参：末行 suffix） */
+      play: '出牌\n选中一张（上拖或轻点）后点此打出。\n物理牌耗阳炁，术法牌耗阴炁。\n{suffix}',
+      /** 出牌 Tip 末行 · 可打出 */
+      'play-ok': '当前这张可以打出。',
+      /** 出牌 Tip 末行 · 不可打出 */
+      'play-disabled': '当前这张炁量不足或已被沉默。',
+      /** 出牌 Tip 末行 · 未选中 */
+      'play-none': '尚未选中卡牌。',
+      /** 合并奥义按钮 Tip（带参：末行 suffix） */
+      fuse: '合并奥义\n两张同系牌（双物理 / 同五行术法 / 双功能）可合体，效果合并并放大。\n牌左边缘有金条 = 手牌里有能跟它合体的牌；选中后脉动朱红环 = 可直接点它合体。\n{suffix}',
+      /** 合并 Tip 末行 · 有目标（带参：目标名） */
+      'fuse-target': '点击可直接与「{name}」合体。',
+      /** 合并 Tip 末行 · 无目标 */
+      'fuse-none': '当前选中牌没有可组合对象。',
+      /** 调息按钮 Tip（带参：比例 / 收益 / 末行 suffix） */
+      regulate:
+        '阴阳逆转\n把较多的那种炁，按 {ratio} : {gain} 的比例转换成另一种炁，用于凑齐出牌费用。\n每回合限一次；敌方前摇时不可用。\n{suffix}',
+      /** 调息 Tip 末行 · 已用 */
+      'regulate-done': '本回合已经用过了。',
+      /** 调息 Tip 末行 · 前摇中 */
+      'regulate-telegraph': '敌方前摇中，不可调息。',
+      /** 调息 Tip 末行 · 可用（带参：比例 / 收益 / 两侧名） */
+      'regulate-do': '本次消耗 {ratio} 点{from}，换得 {gain} 点{to}。',
+      /** 调息禁用原因 · 目标已满（带参：目标侧名） */
+      'regulate-full': '{to}已满，无法再转换。',
+      /** 调息禁用原因 · 源炁不足（带参：源侧名 / 消耗值） */
+      'regulate-short': '{from}不足 {cost} 点，无法转换。',
+      /** 结束回合按钮 Tip */
+      'end-turn': '结束回合\n放弃本回合剩余行动。\n若手牌超过上限，会先进入「归墟」阶段处理多余的牌，再交给敌方行动。',
+      /** 战报框 Tip */
+      log: '战报\n本场战斗的逐条记录：出牌、伤害、状态变化、弹反结果都会写在这里。\n最新的在最上方。',
+
+      /* ---- 敌方区 ---- */
+      /** 敌方气血 Tip（带参：当前/上限/护盾行） */
+      'enemy-hp': '敌方气血 {hp}/{maxHp}{shield}\n归零即被击败。',
+      /** 敌方护盾角标 Tip（带参：护盾值） */
+      'enemy-shield': '护盾 {value} 点\n优先于气血被扣减。',
+      /** 敌方意图品阶释义 · 常 */
+      'grade-base': '常 · 基础招式',
+      /** 敌方意图品阶释义 · 技 */
+      'grade-art': '技 · 精妙招式',
+      /** 敌方意图品阶释义 · 凶 */
+      'grade-dire': '凶 · 凶险招式',
+      /** 敌方意图品阶释义 · 杀 */
+      'grade-kill': '杀 · 杀招，伤害极高',
+      /** 敌方意图卡 Tip（带参：招式名 / 品阶 / 说明行 / 势与上限） */
+      intent: '敌方招式「{label}」\n{grade}\n{note}势 {shi}/{cap}：不足则本回合只能回气蓄势',
+
+      /* ---- 卡牌 ---- */
+      /** 卡牌 Tip（带参：卡名 / 类型行 / 效果描述） */
+      card: '「{name}」\n{summary}\n{desc}',
+      /** 卡牌 Tip 类型行 · 多段（前置空格逐字保留，带参：段数） */
+      'card-hits': ' · {hits} 段',
+      /** 卡牌 Tip 类型行 · 群体（前置空格逐字保留） */
+      'card-aoe': ' · 群体',
+      /** 阳炁消耗角标 Tip（带参：消耗值） */
+      'cost-yang': '阳炁消耗 {value} 点\n攻击与调息可获得阳炁。',
+      /** 阴炁消耗角标 Tip（带参：消耗值） */
+      'cost-yin': '阴炁消耗 {value} 点\n术法主耗阴炁，受击亦可积累。',
+    },
   },
 } as const;
+
+/**
+ * 孤儿键登记台账（临时）。
+ *
+ * 【为什么存在】`src/i18n/i18n.test.ts` 的孤儿键扫描要求「zh-CN 的每个叶子键都在 src/** 里
+ * 被**字面量**引用过」（正则：`['"\`]<键>['"\`]`）。本批（S2a）只建词表、**不改组件**，
+ * 因此 `ui.battle.*` / `tip.battle.*` 暂时没有任何真实引用点，会被判为「死键」。
+ * 这里把它们逐条以字面量登记，既满足扫描，也作为 T03–T08 迁移时的对照清单。
+ *
+ * 【何时删除】T03–T08 把 `BattleScreen.tsx` 及其子组件改走 `t()`、末日键未被引用后，
+ * 本台账即可整体删除（删除后仍会有真实引用撑着孤儿键扫描）。
+ *
+ * 注意：本数组**不在 `zhCN` 对象内**（否则 flatten 会把数组项也当成叶子键）。
+ */
+export const BATTLE_KEY_LEDGER = [
+  'ui.battle.turn',
+  'ui.battle.retreat',
+  'ui.battle.retreat-action',
+  'ui.battle.term',
+  'ui.battle.target',
+  'ui.battle.stance-confirm',
+  'ui.battle.hp',
+  'ui.battle.yang',
+  'ui.battle.yin',
+  'ui.battle.yang-essence',
+  'ui.battle.yin-essence',
+  'ui.battle.momentum',
+  'ui.battle.diff',
+  'ui.battle.wuxing',
+  'ui.battle.wuxing-generate',
+  'ui.battle.wuxing-opening',
+  'ui.battle.blade-stacks',
+  'ui.battle.hand-empty',
+  'ui.battle.hint',
+  'ui.battle.hint-inline',
+  'ui.battle.parry-perfect',
+  'ui.battle.parry-early',
+  'ui.battle.parry-miss',
+  'ui.battle.parry-now',
+  'ui.battle.parry-charging',
+  'ui.battle.parry-button',
+  'ui.battle.parry-hint',
+  'ui.battle.play-card',
+  'ui.battle.fuse',
+  'ui.battle.fuse-merge',
+  'ui.battle.fuse-none',
+  'ui.battle.regulate-used',
+  'ui.battle.regulate-telegraph',
+  'ui.battle.regulate',
+  'ui.battle.regulate-full',
+  'ui.battle.regulate-short',
+  'ui.battle.end-turn',
+  'ui.battle.relic-ghost',
+  'ui.battle.card-unfusable',
+  'ui.battle.shield-tag',
+  'ui.battle.boss',
+  'ui.battle.grade-base',
+  'ui.battle.grade-art',
+  'ui.battle.grade-dire',
+  'ui.battle.grade-kill',
+  'ui.battle.card-hits',
+  'ui.battle.card-aoe',
+  'ui.battle.card-fusable',
+  'ui.battle.ultimate',
+  'tip.battle.month',
+  'tip.battle.month-defense-mul',
+  'tip.battle.month-defense-none',
+  'tip.battle.term',
+  'tip.battle.term-implemented',
+  'tip.battle.term-pending',
+  'tip.battle.turn',
+  'tip.battle.retreat',
+  'tip.battle.stance',
+  'tip.battle.stance-active',
+  'tip.battle.stance-pending',
+  'tip.battle.stance-idle',
+  'tip.battle.stance-confirm',
+  'tip.battle.stance-confirm-switched',
+  'tip.battle.stance-confirm-pending',
+  'tip.battle.stance-confirm-none',
+  'tip.battle.day-master',
+  'tip.battle.ten-gods',
+  'tip.battle.ten-gods-pending',
+  'tip.battle.hp',
+  'tip.battle.shield-impact',
+  'tip.battle.yang-essence',
+  'tip.battle.yin-essence',
+  'tip.battle.momentum',
+  'tip.battle.diff',
+  'tip.battle.spell-stance',
+  'tip.battle.spell-stance-generate',
+  'tip.battle.spell-stance-opening',
+  'tip.battle.blade-stacks',
+  'tip.battle.combo',
+  'tip.battle.hint',
+  'tip.battle.parry',
+  'tip.battle.block',
+  'tip.battle.play',
+  'tip.battle.play-ok',
+  'tip.battle.play-disabled',
+  'tip.battle.play-none',
+  'tip.battle.fuse',
+  'tip.battle.fuse-target',
+  'tip.battle.fuse-none',
+  'tip.battle.regulate',
+  'tip.battle.regulate-done',
+  'tip.battle.regulate-telegraph',
+  'tip.battle.regulate-do',
+  'tip.battle.regulate-full',
+  'tip.battle.regulate-short',
+  'tip.battle.end-turn',
+  'tip.battle.log',
+  'tip.battle.enemy-hp',
+  'tip.battle.enemy-shield',
+  'tip.battle.grade-base',
+  'tip.battle.grade-art',
+  'tip.battle.grade-dire',
+  'tip.battle.grade-kill',
+  'tip.battle.intent',
+  'tip.battle.card',
+  'tip.battle.card-hits',
+  'tip.battle.card-aoe',
+  'tip.battle.cost-yang',
+  'tip.battle.cost-yin',
+] as const;
