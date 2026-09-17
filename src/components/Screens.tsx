@@ -32,8 +32,11 @@ const BASE = import.meta.env.BASE_URL;
  * 宣纸 / 青绿山水背景。
  * 从 v1 的 `opacity 0.32 深色水墨`（闷、灰、阴）改为明亮的青绿山水 + 霞光，
  * 使「外围界面」与「战斗界面」色温一致。
+ *
+ * 【T01 具名导出】原为文件内私有函数；择道面板（`StanceSelectPanel.tsx`）需要同款基底，
+ * 故导出复用，**不复制第二份**（避免两处背景各自漂移）。
  */
-function AmbientBackground({ opacity = 0.34, position = 'center' }: { opacity?: number; position?: string }) {
+export function AmbientBackground({ opacity = 0.34, position = 'center' }: { opacity?: number; position?: string }) {
   return (
     <>
       <div

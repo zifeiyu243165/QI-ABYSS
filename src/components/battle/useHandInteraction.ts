@@ -5,23 +5,23 @@
  * `fusibleUids`、`partnerUids`、`tryFuse`、`pickCard`、三个 pointer handler、`playSelected`、
  * `fuseHint`。
  *
- * 【手感与行为零变化】分支顺序、`useMemo` 依赖数组、`dispatch` 调度序列、拖动阈值常量
+ * 【手感与行为】分支顺序、`useMemo` 依赖数组、`dispatch` 调度序列、拖动阈值常量
  * （`MOVE_SLOP_PX=12` / `SELECT_LIFT_PX=46` / `RELEASE_BACK_PX=30`）全部逐字保留。
  *
- * 【融合判定（最易回归）】`pickCard` 三分支顺序不变：
+ * 【融合判定（T06 收紧）】`pickCard` 改为**严格单选**：
  *   ① 点的是已选中的牌 -> 取消选中；
- *   ② 已有一张选中牌且本张可与它融合（`tryFuse` 成功）-> 立刻合体；
- *   ③ 其余 -> 改选本张（不同系时把警告交给调用方的 `setWarn`）。
+ *   ② 其余情况 -> **一律改选本张**（不自动融合、不弹警告）。
+ * 融合**只由操作栏「合并奥义」按钮**触发（经 `tryFuse`），彻底贴合用户原话
+ * 「只有主动点选才能触发卡牌合并」—— 此前「点第二张同系牌即当场合体」是误触之源。
  *
- * 【唯一改动】原 `pickCard` 内的警告串是本地模板字面量，此处改走 `t()`（新文件不得含中文字面量）；
- * 其余逐字不动。
+ * 【T06 移除 `setWarn`】原分歧③会向调用方写「不同系无法合体」的警告；严格单选后不再需要
+ * 该提示（改选本身即反馈），故第 4 个参数与对应分支一并删除（调用点同步更新）。
  */
 import { useCallback, useMemo, useRef, useState } from 'react';
 import type { Dispatch, PointerEvent as ReactPointerEvent, SetStateAction } from 'react';
 import type { BattleAction } from '../../game/engine/battle';
 import { canFuse } from '../../game/engine/battle';
 import type { Card } from '../../game/types';
-import { t } from '../../i18n';
 import { MOVE_SLOP_PX, RELEASE_BACK_PX, SELECT_LIFT_PX } from './constants';
 
 /** 正在被拖动的手牌指针状态（供渲染层做位移 / 层级） */
@@ -76,14 +76,12 @@ export interface HandInteraction {
  * @param hand      当前手牌
  * @param dispatch  战斗 action 派发器
  * @param targetId  当前目标 id（融合 / 出牌时带上）
- * @param setWarn   警告文案写入器（不同系无法合体时提示原因）
  * @returns 选中集、拖动状态、可融合 / 可组合集合、各交互回调
  */
 export function useHandInteraction(
   hand: Card[],
   dispatch: (a: BattleAction) => void,
   targetId: string | null,
-  setWarn: Dispatch<SetStateAction<string>>,
 ): HandInteraction {
   const dragRef = useRef<DragAnchor | null>(null);
   const [drag, setDrag] = useState<HandDrag | null>(null);
@@ -133,36 +131,25 @@ export function useHandInteraction(
   /**
    * 选中一张牌的**唯一入口**（轻点、上拖都走这里）。
    *
-   * 三种结果：
-   * 1. 点的是已选中的牌 -> 取消选中（收回手牌）
-   * 2. 已有一张选中牌且本张可与它融合 -> 立刻合体
-   * 3. 其余情况 -> 改选本张
+   * 【T06 严格单选】只做两件事：
+   * 1. 点的是已选中的牌 -> 取消选中（收回手牌）；
+   * 2. 其余情况 -> **改选本张**（不做任何自动融合、不发警告）。
+   * 融合的唯一入口是操作栏「合并奥义」按钮（`tryFuse`）。
    */
   const pickCard = useCallback(
     (uid: string) => {
       const card = hand.find((c) => (c.uid ?? c.id) === uid);
       if (!card) return;
 
+      // ① 点已选中的牌 → 取消
       if (selectedCards.includes(uid)) {
         setSelectedCards((prev) => prev.filter((x) => x !== uid));
         return;
       }
-
-      if (selectedCards.length === 1) {
-        const cur = selectedCards[0]!;
-        if (tryFuse(cur, uid)) return;
-        const a = hand.find((c) => (c.uid ?? c.id) === cur);
-        // 不可组合时不能「点了没反应」——明确告知原因，再改选本张
-        if (a) setWarn(t('ui.battle.card-unfusable', { a: a.name, b: card.name }));
-        setSelectedCards([uid]);
-        return;
-      }
-
+      // ② 其余一律改选（不自动融合、不再 setWarn）
       setSelectedCards([uid]);
     },
-    // 依赖数组在原有 `[hand, selectedCards, tryFuse]` 基础上追加 `setWarn`：它由调用方的
-    // `useState` 提供、引用恒定，行为与原内联版本完全一致（仅为满足 exhaustive-deps 校验）。
-    [hand, selectedCards, tryFuse, setWarn],
+    [hand, selectedCards],
   );
 
   const handleCardPointerDown = useCallback((e: ReactPointerEvent<HTMLDivElement>, card: Card) => {

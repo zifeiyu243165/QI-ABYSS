@@ -81,7 +81,6 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
     shake,
     hurt,
     warn,
-    setWarn,
     showHint,
     setShowHint,
     lotus,
@@ -120,7 +119,7 @@ export function BattleScreen({ state, dispatch, fxRef, onExit }: Props) {
     handleCardPointerUp,
     playSelected,
     fuseHint,
-  } = useHandInteraction(state.hand, dispatch, targetId, setWarn);
+  } = useHandInteraction(state.hand, dispatch, targetId);
 
   /* ---------- 派生 ---------- */
   const isTelegraph = state.phase === 'enemyTelegraph';

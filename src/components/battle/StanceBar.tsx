@@ -89,7 +89,11 @@ export function StanceBar({ stance, stanceSwitched, pending, onSelect, onConfirm
                 style={{ flex: 1 }}
               >
                 <button
-                  onClick={() => onSelect(pending !== null || active ? null : s.id)}
+                  // 【T02 单击语义修复】原 `onSelect(pending !== null || active ? null : s.id)`：
+                  // 只要已有预选**或**已生效就传 null → 第一次点任何格都变成「取消预选」，
+                  // 玩家必须点第二下才预选，且选框常驻第一格。现改为「点未选中的格 = 当场预选；
+                  // 再点**同一格**才取消」（保留两段式：预选 → 右侧确认键提交）。
+                  onClick={() => onSelect(pending === s.id ? null : s.id)}
                   style={{
                     ...stanceBtnBase,
                     position: 'relative',
@@ -128,7 +132,8 @@ export function StanceBar({ stance, stanceSwitched, pending, onSelect, onConfirm
                       style={{ left: '50%', top: '50%', transform: 'translate(-50%, -50%)' }}
                     />
                   )}
-                  <span style={{ position: 'relative', zIndex: 2 }}>{s.name.split('·')[0]}</span>
+                  {/* 【T04 对比度】架势字 10.5px `-sub` → 11px / 700 / `--color-card-text`（见设计 §六） */}
+                  <span style={{ position: 'relative', zIndex: 2, fontSize: 11, fontWeight: 700 }}>{s.name.split('·')[0]}</span>
                 </button>
               </Tip>
             );

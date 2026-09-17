@@ -10,8 +10,10 @@
  * 抽成 Hook 只是把「持有者」从组件挪到同一屏的 Hook，生命周期与渲染位置完全等价。
  *
  * 【铁律逐字保留】
- * - 特效消费：`fxKey` 的拼接顺序、`fxConsumed` 去重、`dispatch({ type:'CONSUME_FX' })` 与
- *   `setHitstop(0)` 的 **850ms** 定时、以及返回的 `window.clearTimeout` 清理函数。
+ * - 特效消费：`fxConsumed` 去重、`dispatch({ type:'CONSUME_FX' })` 与 `setHitstop(0)` 的
+ *   **850ms** 定时、以及返回的 `window.clearTimeout` 清理函数。
+ *   【T09 唯一改动】`fxKey` 在原「伤害数字 id 串 | 卡帧 | 弹反」之后**追加** `pendingFusion?.key`，
+ *   使融合演出也走同一条去重 / 消费通道（拼接顺序其余部分不变，不引入回归）。
  * - 受击 `hurt`：由 `prevHpRef` 前后比对触发（只在掉血时 +1）。
  * - `showHint`：`state.turn > 1` 时自动收起。
  * - `warn`：**1600ms** 自动消失。
@@ -132,13 +134,19 @@ export function useBattleFx(
   }, []);
 
   /* ---------- 特效消费 ---------- */
-  const fxKey = `${state.pendingNumbers.map((n) => n.id).join(',')}|${state.pendingHitstopMs}|${state.pendingParryGlyph}`;
+  // 【T09】`fxKey` 追加 `pendingFusion.key`，让融合演出也走同一条「去重 + 消费」通道。
+  // 融合产物打出后立刻进弃牌堆，UI 只能靠这条通道得知「刚发生了什么」。
+  const fxKey = `${state.pendingNumbers.map((n) => n.id).join(',')}|${state.pendingHitstopMs}|${state.pendingParryGlyph}|${state.pendingFusion?.key ?? ''}`;
   useEffect(() => {
     if (fxKey === '' || fxKey === fxConsumed.current) return;
     fxConsumed.current = fxKey;
 
     for (const n of state.pendingNumbers) {
-      fxRef.current?.burst(n.x, n.y, n.crit ? 3 : 1.2);
+      // 按伤害类别分形分色（物理=墨点+碎石；术法/奥义=对应五行火花；暴击/真伤=金箔+冲击波）
+      fxRef.current?.burst(n.x, n.y, n.crit ? 3 : 1.2, n.kind);
+    }
+    if (state.pendingFusion) {
+      fxRef.current?.fuseBurst(state.pendingFusion);
     }
     if (state.pendingHitstopMs > 0) {
       setHitstop(state.pendingHitstopMs);

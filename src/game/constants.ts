@@ -77,7 +77,16 @@ export const SUBSTITUTE_RATIO_DEFAULT = 2;
 export const SUBSTITUTE_RATIO_SANXIU = 1;
 
 /** 炁上限 */
-export const QI_CAP_BASE = 10;
+export const QI_CAP_BASE = 14;
+
+/**
+ * 每回合开始恢复的阳炁（受 `yangCap` 夹顶；与「得令」各自独立结算）。
+ * 【为什么需要】开局 3/3，此后几乎不涨 —— 奥义 `costYang` 可达 5，一旦卡手就永远打不出来。
+ * 改由「每回合固定回炁」+「提高上限」共同兜住可用性（见设计 §八）。
+ */
+export const QI_REGEN_YANG = 3;
+/** 每回合开始恢复的阴炁（受 `yinCap` 夹顶） */
+export const QI_REGEN_YIN = 3;
 
 /** 调息比例：2 点换 1 点 */
 export const REGULATE_RATIO = 2;

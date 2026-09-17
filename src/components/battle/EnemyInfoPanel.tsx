@@ -69,7 +69,8 @@ export function EnemyInfoPanel({ enemy, dead }: EnemyInfoPanelProps) {
         {enemy.isBoss && (
           <span
             style={{
-              fontSize: 8,
+              // 【T04 对比度】首领角标 8px → 8.5px（见设计 §六 EnemyInfoPanel.tsx:72）
+              fontSize: 8.5,
               background: 'var(--color-miaojin)',
               color: 'var(--color-card-title)',
               padding: '0 3px',

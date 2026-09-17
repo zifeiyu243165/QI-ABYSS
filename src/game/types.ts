@@ -452,6 +452,38 @@ export type BattlePhase =
   | 'won'
   | 'lost';
 
+/**
+ * 融合演出事件（T08 · 引擎 → UI 的一次性信号）。
+ *
+ * 【为什么是「事件」而不是让 UI 自己推】融合的产物（奥义卡）在引擎里生成后**立即被打出**
+ * 并进入弃牌堆，UI 侧再也看不到它。若让特效层自己去猜「刚刚发生了什么」，就得在 UI 里
+ * 复刻 `fuseCards()` 的推导逻辑 —— 那是双真源。改为引擎在 `doFuse` 里把「这次融合的关键
+ * 描述」写进 `pendingFusion`，UI 只负责按 `key` 播对应形态的演出。
+ *
+ * 【key 的 7 形态】`physical:none` / `support:none` / `spell:${WuXing}`（金木水火土）。
+ * 与 `canFuse` 的 `keyOf` 收敛口径一致 —— 26 张牌两两组合是爆炸量，按「融合组」归类才可维护。
+ */
+export interface FusionEvent {
+  /** 形态键：'physical:none' | 'support:none' | `spell:${WuXing}`（共 7 种） */
+  key: string;
+  /** 融合结果的卡牌类别 */
+  kind: CardKind;
+  /** 融合结果的五行（无则 null） */
+  wuxing: WuXing | null;
+  /** 融合结果是否群体 */
+  aoe: boolean;
+  /** 融合结果伤害倍率 */
+  mul: number;
+  /** 融合结果卡名（复用引擎既有 `'奥义·…'` 字面量，不新增中文行） */
+  name: string;
+  /** 参与融合的两张牌名 */
+  fusedFrom: string[];
+  /** 融合结果阳炁消耗 */
+  costYang: number;
+  /** 融合结果阴炁消耗 */
+  costYin: number;
+}
+
 export interface BattleStats {
   /** 十神触发次数 */
   shishenTriggers: Record<string, number>;
@@ -550,6 +582,8 @@ export interface BattleState {
   pendingHitstopMs: number;
   /** 一次性 UI 信号：完美弹反 */
   pendingParryGlyph: boolean;
+  /** 一次性 UI 信号：融合演出（供特效层播放奥义专属形态） */
+  pendingFusion: FusionEvent | null;
 }
 
 export interface DamageNumber {

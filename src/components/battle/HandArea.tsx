@@ -9,9 +9,13 @@
  * 一律经 `handLayout.ts` 的 `handCardLayout()` 计算（本任务首次接线）—— 数值与结构
  * 与该文件逐字一致，故渲染像素级零变化。
  *
- * 【铁律逐字保留】`dimmed = handExpanded && !sel && !partner`；选中牌上浮 `-58px`/`scale(1.12)`、
- * 可合体目标 `-22px`/`scale(1.06)`、层级 `300 / 200 + i / 400`、过渡
- * `190ms cubic-bezier(0.2,0.9,0.3,1.05)`（拖动中 `transition:none`）。
+ * 【铁律逐字保留】选中牌上浮 `-58px`/`scale(1.12)`、可合体目标 `-22px`/`scale(1.06)`、层级
+ * `300 / 200 + i / 400`、过渡 `190ms cubic-bezier(0.2,0.9,0.3,1.05)`（拖动中 `transition:none`）。
+ *
+ * 【T06 取消降透明】原「展开态下非选中 / 非伙伴牌 `opacity:0.45`」（`dimmed`）已**彻底移除**：
+ * 既然点第二张只是「改选」，把非伙伴牌降透明会**误导玩家以为不能点**。改动方式为从
+ * `HandArea` 与 `GameCard` 一并删除该 prop（比传 `dimmed={false}` 更干净，不留死参数）。
+ * 不可打出的牌仍按 `playable` 降透明（`0.55`）—— 那是另一层语义，不在本次改动范围。
  *
  * 【交互】轻点 / 上拖选中、再点 / 下拖取消、点红框牌即刻合体 —— 全部委托
  * `useHandInteraction` 的三个 pointer handler，本组件不自持交互状态。
@@ -98,8 +102,6 @@ export function HandArea({
           const dragging = drag?.uid === uid;
           const fusible = selectedCards.length === 0 && fusibleUids.has(uid);
           const partner = partnerUids.has(uid);
-          /** 展开态下，既不选中也不可组合的牌降透明，让可选目标跳出来 */
-          const dimmed = handExpanded && !sel && !partner;
 
           /**
            * 布局数学见 `handCardLayout()`：`even = floor((344-CARD_W)/max(1,n-1))`；
@@ -144,7 +146,6 @@ export function HandArea({
                 selected={sel}
                 fusible={fusible}
                 partner={partner}
-                dimmed={dimmed}
               />
             </div>
           );

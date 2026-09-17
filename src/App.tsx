@@ -8,11 +8,12 @@ import { IMPLEMENTED_TERMS, LUNAR_MONTHS, SOLAR_TERM_MAP } from './game/data/wor
 import { DEFAULT_LOCALE, migrateSave } from './i18n';
 import { BattleScreen } from './components/BattleScreen';
 import { IntroSequence, LoadoutScreen, MainScreen, ResultScreen } from './components/Screens';
+import { StanceSelectPanel } from './components/StanceSelectPanel';
 import { DamageNumberLayer, FxLayer, ParryGlyph } from './components/fx/Effects';
 import type { FxHandle } from './components/fx/Effects';
 import { UI } from './components/battle/artAssets';
 
-type Screen = 'main' | 'loadout' | 'battle' | 'result';
+type Screen = 'main' | 'loadout' | 'select' | 'battle' | 'result';
 
 const DEFAULT_SAVE: SaveData = {
   version: SAVE_VERSION,
@@ -68,8 +69,16 @@ export default function App() {
   }, [save]);
 
   /* ---------- 开始一局 ---------- */
+  /**
+   * 建局并进入战斗。
+   *
+   * 【T01 签名变更】`startBattle(cid, characterId)` —— 角色由调用方**显式传入**，
+   * 内部一律用传入值 + `save.equipment[characterId]` 组建，**不再读闭包里的
+   * `save.selectedCharacterId`**（择道面板刚 setSave 的这一刻闭包值仍是旧的，
+   * 读它会把玩家选的角色丢掉）。
+   */
   const startBattle = useCallback(
-    (cid: string) => {
+    (cid: string, characterId: string) => {
       const month = pick(LUNAR_MONTHS);
       const term = pick(IMPLEMENTED_TERMS);
       const seed = Math.floor(Math.random() * 1_000_000) + 1;
@@ -79,8 +88,8 @@ export default function App() {
       dispatch({
         type: 'RESET',
         state: createBattleState({
-          characterId: save.selectedCharacterId,
-          equipment: save.equipment[save.selectedCharacterId] ?? [null, null],
+          characterId,
+          equipment: save.equipment[characterId] ?? [null, null],
           campaignId: cid,
           lunarMonthId: month.id,
           solarTermId: term.id,
@@ -90,7 +99,7 @@ export default function App() {
       setShowIntro(true);
       setScreen('battle');
     },
-    [save.selectedCharacterId, save.equipment],
+    [save.equipment],
   );
 
   /* ---------- 胜负 ---------- */
@@ -118,10 +127,14 @@ export default function App() {
 
   const hasNext = nextCampaign !== null;
 
-  const enterBattle = useCallback(() => {
-    const pending = CAMPAIGNS.find((c) => !save.clearedCampaigns.includes(c.id)) ?? CAMPAIGNS[0]!;
-    startBattle(pending.id);
-  }, [save.clearedCampaigns, startBattle]);
+  /**
+   * 待打战役：首个未通关的战役（与旧 `enterBattle` 内联逻辑等价）。
+   * T01 之后「入局」先弹择道面板，故这里只算 id，由面板确认回调用它建局。
+   */
+  const pendingCampaign = useMemo(
+    () => CAMPAIGNS.find((c) => !save.clearedCampaigns.includes(c.id)) ?? CAMPAIGNS[0]!,
+    [save.clearedCampaigns],
+  );
 
   const weather = screen === 'battle' ? (SOLAR_TERM_MAP[env.solarTermId]?.particle ?? 'none') : 'none';
 
@@ -142,7 +155,7 @@ export default function App() {
         }}
       >
         {screen === 'main' && (
-          <MainScreen save={save} onStart={enterBattle} onLoadout={() => setScreen('loadout')} />
+          <MainScreen save={save} onStart={() => setScreen('select')} onLoadout={() => setScreen('loadout')} />
         )}
 
         {screen === 'loadout' && (
@@ -153,6 +166,18 @@ export default function App() {
           />
         )}
 
+        {/* 择道面板（T01）：选人即选架势，确认后用**所选角色**开打 */}
+        {screen === 'select' && (
+          <StanceSelectPanel
+            save={save}
+            onBack={() => setScreen('main')}
+            onConfirm={(cid) => {
+              setSave((s) => ({ ...s, selectedCharacterId: cid }));
+              startBattle(pendingCampaign.id, cid);
+            }}
+          />
+        )}
+
         {screen === 'battle' && <BattleScreen state={battle} dispatch={dispatch} fxRef={fxRef} onExit={() => setScreen('main')} />}
 
         {screen === 'result' && (
@@ -160,10 +185,10 @@ export default function App() {
             state={battle}
             onNext={
               hasNext && nextCampaign
-                ? () => startBattle(nextCampaign.id)
+                ? () => startBattle(nextCampaign.id, save.selectedCharacterId)
                 : undefined
             }
-            onRetry={() => startBattle(campaignId)}
+            onRetry={() => startBattle(campaignId, save.selectedCharacterId)}
             onHome={() => setScreen('main')}
           />
         )}

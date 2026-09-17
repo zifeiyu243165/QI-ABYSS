@@ -76,7 +76,9 @@ export function IntentCard({ label, grade, active, willAttack, note, shi, shiCap
           position: 'relative',
           width: '100%',
           height: INTENT_H - 8,
-          padding: '2px 5px',
+          // 【T05 遮挡修复】内容内缩 5px < 素材 `ui_意图卡底` 的左右框饰各 8px（`SLICE.intentCard`），
+          // 会被边框压住 → 改为左右各 8px（见设计 §五 遮挡排查表）。
+          padding: '2px 8px',
           borderRadius: 5,
           display: 'flex',
           flexDirection: 'column',

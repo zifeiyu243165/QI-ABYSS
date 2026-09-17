@@ -158,13 +158,23 @@ const HEX_EXEMPT = {
 
 /**
  * 死 keyframe 豁免清单。
- * 这两条经扫描确认在 src/** 中没有任何 animation / animationName 引用它们
- * （`breathe` 只出现在 `.gold-breathe` 这个类名里，而该类名应用的是 `goldBreathe`）。
- * 属于既有遗留债务；global.css 本次不可改，故豁免为 ⚠。详见交付回复的「疑似问题清单」。
+ * 经扫描确认在 src/** 中没有任何 animation / animationName 引用它们：
+ *   - `breathe` 只出现在 `.gold-breathe` 这个类名里，而该类名应用的是 `goldBreathe`；
+ *   - `telegraphSweep` 属既有遗留；
+ *   - `fuseRingPulse` 为 T03 按设计**主动静态化**后产生的空转定义（详见其条目注释）。
+ * 属于遗留/暂不可清理债务；global.css 本批不可改，故豁免为 ⚠。详见交付回复的「疑似问题清单」。
  */
 const KEYFRAME_EXEMPT = {
   breathe: 'global.css 既有遗留：无任何 animation 引用它（仅在类名 .gold-breathe 中出现）。styles/** 本次不可改。',
   telegraphSweep: 'global.css 既有遗留：无任何 animation 引用它。styles/** 本次不可改。',
+  /**
+   * 【T03 新增豁免】`fuseRingPulse`（可合体目标的朱红脉动环）按设计 §四 **主动转为静态**：
+   * `GameCard` 容器不再挂 `animation`，改用静态 `boxShadow` 表达「可合体」（配合 T06 的融合语义变更）。
+   * 于是 global.css 的 @keyframes 暂时无引用 —— 但本批硬约束「不改 src/styles/**」，无法同步删除该定义，
+   * 故与 `breathe` / `telegraphSweep` 同处置，登记为可追踪的 ⚠ 债务（待可改 styles/ 的批次一并清理）。
+   */
+  fuseRingPulse:
+    'T03 主动静态化：可合体环不再用 animation（改用静态 boxShadow）。@keyframes 定义因「本批禁改 styles/**」暂留，待后续批次清理。',
 };
 
 /**

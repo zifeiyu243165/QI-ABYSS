@@ -105,10 +105,13 @@ export function TopBar({ month, term, monthId, termId, turn, onExit }: TopBarPro
               牌面纵向区间（图内 y≈160..478，含描金边、不含顶环与底流苏）恰映射到窗口 22px；
               再以 `top:-11`（=160×0.0694）上移，使椭圆端正居中于窗口，顶环 / 底流苏被裁掉。
               文字 `whiteSpace:nowrap` 单行居中；窗口 `overflow:hidden` 只裁图，不裁文字。
-              文字字号由继承的 11 下调到 10.5：椭圆牌面内净宽约 54px，「第 N 回合」在 11px 下约 56px
-              会顶到内层描金边，10.5px 下约 53px → 两侧各留约 5px 净空。
+              【T04】牌面文字由「第 N 回合」改为**只显示大号加粗数字**（单字符，绝不会顶到内层描金边）；
+              完整语义「第 N 回合」改由 `aria-label` 承载 —— 故 `ui.battle.turn` 与新增的
+              `ui.battle.turn-number` 两键都被字面量引用，不产生孤儿键。
             */}
             <span
+              role="img"
+              aria-label={t('ui.battle.turn', { turn })}
               style={{
                 position: 'relative',
                 display: 'inline-flex',
@@ -128,17 +131,21 @@ export function TopBar({ month, term, monthId, termId, turn, onExit }: TopBarPro
                 style={{ top: -11, left: 0, right: 'auto', bottom: 'auto' }}
               />
               <span
+                aria-hidden
                 style={{
                   position: 'relative',
                   zIndex: 1,
                   whiteSpace: 'nowrap',
-                  fontSize: 10.5,
-                  color: 'var(--color-miaojin-light)',
+                  fontSize: 20,
+                  fontWeight: 900,
+                  fontFamily: 'var(--font-brush)',
                   fontVariantNumeric: 'tabular-nums',
-                  textShadow: '0 1px 3px rgba(0,0,0,0.85)',
+                  color: 'var(--color-miaojin-light)',
+                  textShadow: '0 1px 2px rgba(0,0,0,0.85)',
+                  lineHeight: 1,
                 }}
               >
-                {t('ui.battle.turn', { turn })}
+                {t('ui.battle.turn-number', { turn })}
               </span>
             </span>
           </Tip>
@@ -149,7 +156,8 @@ export function TopBar({ month, term, monthId, termId, turn, onExit }: TopBarPro
                 aria-label={t('ui.battle.retreat')}
                 style={{
                   // 刻意弱化：避免和「结束回合」抢注意力
-                  color: 'rgba(236,203,122,0.55)',
+                  // 【T04 对比度】文字透明度 0.55 → 0.8（见设计 §六 TopBar.tsx:152）
+                  color: 'rgba(236,203,122,0.8)',
                   fontSize: 10,
                   padding: '1px 5px',
                   borderRadius: 3,

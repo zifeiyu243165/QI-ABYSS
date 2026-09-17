@@ -109,6 +109,14 @@ export const SLICE = {
   jadeButton: { slice: '24% 9% 24% 9%', width: '8px 10px 8px 10px' },
   logFrame: { slice: '14% 6% 14% 14%', width: '8px 8px 8px 14px' },
   parryZone: { slice: '0 8% 0 8%', width: '0 10px 0 10px' },
+  /**
+   * 卡面框（R3）：`card_*.png`（530×742）四边装饰带按实测占比切片
+   * —— 上带 ~90px(12%)、右带 ~55px(11%)、下带 ~112px(15%)、左带 ~75px(14%)。
+   * 渲染端头厚度按同一比例（≈0.11–0.15）折算到 78×112 的卡：上 12 / 右 8 / 下 14 / 左 9。
+   * **重点**：九宫格**无 `fill`**，故内芯不绘制 —— 卡中央露出 `faceBase` 的宣纸渐变，
+   * 文字落在干净纸面上（此前 `backgroundSize:'cover'` 把回纹带整幅拉到卡上，描述压纹样）。
+   */
+  cardFace: { slice: '12% 11% 15% 14%', width: '12px 8px 14px 9px' },
 } as const;
 
 /** 九宫格 → 内联样式（`border-image` 会忽略 `border-radius`，形状由素材提供） */

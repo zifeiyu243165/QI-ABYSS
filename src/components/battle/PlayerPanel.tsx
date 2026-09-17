@@ -100,7 +100,7 @@ export function PlayerPanel({ state, char }: PlayerPanelProps) {
             <Tip text={t('tip.battle.day-master', { rizhu: char?.rizhu ?? '' })} placement="top">
               <span
                 style={{
-                  fontSize: 8.5,
+                  fontSize: 9,
                   background: 'var(--color-zhuhong)',
                   color: 'var(--color-xuanzhi-warm)',
                   padding: '0 3px',
@@ -125,7 +125,7 @@ export function PlayerPanel({ state, char }: PlayerPanelProps) {
                 >
                   <span
                     style={{
-                      fontSize: 8.5,
+                      fontSize: 9,
                       padding: '0 3px',
                       borderRadius: 2,
                       background: 'rgba(11,46,89,0.8)',
@@ -190,7 +190,7 @@ export function PlayerPanel({ state, char }: PlayerPanelProps) {
                 <div style={{ color: 'var(--color-hupo)', fontSize: 18, fontFamily: 'var(--font-brush)' }}>
                   {state.shi}
                 </div>
-                <div style={{ color: 'var(--color-card-text-sub)', fontSize: 9 }}>
+                <div style={{ color: 'var(--color-card-text)', fontSize: 9 }}>
                   {t('ui.battle.momentum', { cap: SHI_CAP })}
                 </div>
               </div>
@@ -202,7 +202,7 @@ export function PlayerPanel({ state, char }: PlayerPanelProps) {
                 <div style={{ color: 'var(--color-zhuhong)', fontSize: 18, fontFamily: 'var(--font-brush)' }}>
                   {yinYangDiff}
                 </div>
-                <div style={{ color: 'var(--color-card-text-sub)', fontSize: 9 }}>{t('ui.battle.diff')}</div>
+                <div style={{ color: 'var(--color-card-text)', fontSize: 9 }}>{t('ui.battle.diff')}</div>
               </div>
             </Tip>
           )}
@@ -220,7 +220,7 @@ export function PlayerPanel({ state, char }: PlayerPanelProps) {
                 <div style={{ color: 'var(--color-wx-shui)', fontSize: 14, fontFamily: 'var(--font-brush)' }}>
                   {state.lastSpellWuxing ? t('ui.battle.wuxing-generate') : t('ui.battle.wuxing-opening')}
                 </div>
-                <div style={{ color: 'var(--color-card-text-sub)', fontSize: 9 }}>{t('ui.battle.wuxing')}</div>
+                <div style={{ color: 'var(--color-card-text)', fontSize: 9 }}>{t('ui.battle.wuxing')}</div>
               </div>
             </Tip>
           )}
@@ -236,7 +236,7 @@ export function PlayerPanel({ state, char }: PlayerPanelProps) {
           )}
           {combo && bladeCount === 1 && (
             <Tip text={t('tip.battle.combo', { name: combo.skillName })} placement="top">
-              <div style={{ color: 'var(--color-hupo)', fontSize: 9, marginTop: 2 }}>{combo.skillName}</div>
+              <div style={{ color: 'var(--color-hupo)', fontSize: 10, fontWeight: 700, marginTop: 2 }}>{combo.skillName}</div>
             </Tip>
           )}
         </div>

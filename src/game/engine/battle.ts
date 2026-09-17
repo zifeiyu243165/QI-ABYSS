@@ -11,6 +11,7 @@ import type {
   DamageNumber,
   Effect,
   Enemy,
+  FusionEvent,
   QiType,
   StanceId,
   StatusId,
@@ -43,6 +44,8 @@ import {
   PARRY_WINDOW_MS,
   PLAYER_ZONE_Y,
   QISHA_COST_MUL,
+  QI_REGEN_YANG,
+  QI_REGEN_YIN,
   REGULATE_RATIO,
   RELIC_QI_GAIN,
   SANXIU_JIANZOU_THRESHOLD,
@@ -260,6 +263,7 @@ export function createBattleState(input: CreateBattleInput): BattleState {
     pendingNumbers: [],
     pendingHitstopMs: 0,
     pendingParryGlyph: false,
+    pendingFusion: null,
   };
 
   // 洗牌 + 起手
@@ -439,6 +443,11 @@ function startPlayerTurn(s: BattleState): BattleState {
     next.yang = Math.min(next.yangCap, next.yang + 1);
     next.yin = Math.min(next.yinCap, next.yin + 1);
   }
+
+  // 每回合固定回炁（T07）：在「得令」之后独立结算，同样按各脉上限夹顶。
+  // 与得令各加各的、互不覆盖 —— 得令月份下即 +4 / +4（各受 cap 夹顶）。
+  next.yang = Math.min(next.yangCap, next.yang + QI_REGEN_YANG);
+  next.yin = Math.min(next.yinCap, next.yin + QI_REGEN_YIN);
 
   // 灼烧结算（玩家）—— 刻意保留「保底 1 血」：DOT 不直接击杀玩家，避免读条式暴毙
   const burn = next.player.statuses.find((st) => st.id === 'burn');
@@ -1302,6 +1311,8 @@ function checkEnd(s: BattleState): BattleState {
 /** 两张同属性牌 → 奥义卡（运行时产物，不占卡表） */
 export function canFuse(a: Card, b: Card): boolean {
   if (a.id === b.id) return false;
+  // 奥义是融合的**终点**：禁止「奥义 + 任意牌」再融合（否则可无限链式叠倍率）。
+  if (a.isUltimate || b.isUltimate) return false;
   const keyOf = (c: Card) => (c.kind === 'physical' ? 'physical' : (c.wuxing ?? c.kind));
   return keyOf(a) === keyOf(b);
 }
@@ -1376,7 +1387,24 @@ function doFuse(s: BattleState, cardAKey: string, cardBKey: string, targetId?: s
   next.hand.splice(lo, 1);
   next.hand.push(ult);
   pushLog(next, `合并奥义 → 「${ult.name}」`);
-  return playCard(next, ult.uid!, targetId);
+  // T08：把这次融合的关键描述写入一次性 UI 信号（特效层据此播「奥义专属形态」）。
+  // `name` 只**引用** `ult.name`（引擎既有 `'奥义·…'` 字面量），不在此新拼中文字符串 →
+  // §9 文案台账行数不增长。
+  const fusion: FusionEvent = {
+    key: `${ult.kind}:${ult.wuxing ?? 'none'}`,
+    kind: ult.kind,
+    wuxing: ult.wuxing ?? null,
+    aoe: ult.aoe,
+    mul: ult.mul,
+    name: ult.name,
+    fusedFrom: ult.fusedFrom ?? [],
+    costYang: ult.costYang,
+    costYin: ult.costYin,
+  };
+  const result = playCard(next, ult.uid!, targetId);
+  // playCard 内部 `clone(s)` 会带上 pendingFusion；若它因故早退（返回入参）也仍是 next 本身。
+  result.pendingFusion = fusion;
+  return result;
 }
 
 /* ============================== 调息 / 架势 ============================== */
@@ -1575,6 +1603,7 @@ export function battleReducer(state: BattleState, action: BattleAction): BattleS
       next.pendingNumbers = [];
       next.pendingHitstopMs = 0;
       next.pendingParryGlyph = false;
+      next.pendingFusion = null;
       return next;
     }
 

@@ -10,6 +10,8 @@ import {
   HAND_LIMIT,
   PARRY_TELEGRAPH_MS,
   PARRY_WINDOW_MS,
+  QI_REGEN_YANG,
+  QI_REGEN_YIN,
   SCRAPE_RATIO,
   ZHENGYIN_COST_MUL,
 } from '../constants';
@@ -775,16 +777,21 @@ describe('加班怨灵「夺炁」：真实抽走玩家的炁（此前是无载�
   it('轮到「夺炁」时玩家阴阳炁各被抽走 2', () => {
     const s = jiabanAtDuoQi({ yang: 10, yin: 10 });
     const n = battleReducer(s, { type: 'ENEMY_ACT' });
-    expect(n.yang).toBe(8);
-    expect(n.yin).toBe(8);
+    // 【T07 期望值更新】ENEMY_ACT 末尾会调用 startPlayerTurn，而 T07 起每回合开始固定
+    // +3 阳 / +3 阴（夹顶 cap）。故最终值 = 起始 − 夺炁 2 + 回炁 3 = 11（10 → 8 → 11）。
+    // 断言仍为**精确值**（非弱化）；「夺炁确实发生」另由下方日志断言守住。
+    expect(n.yang).toBe(10 - 2 + QI_REGEN_YANG);
+    expect(n.yin).toBe(10 - 2 + QI_REGEN_YIN);
     expect(n.log.some((l) => l.includes('夺炁'))).toBe(true);
   });
 
   it('炁为 0 / 不足时不会被抽成负数，且日志如实反映实际抽走量', () => {
     const s = jiabanAtDuoQi({ yang: 0, yin: 1 });
     const n = battleReducer(s, { type: 'ENEMY_ACT' });
-    expect(n.yang).toBe(0);
-    expect(n.yin).toBe(0);
+    // 【T07 期望值更新】同上：0 − 0 + 3 = 3、1 − 1 + 3 = 3（夺炁被夹到 0 后由回炁补 3）。
+    // 「不被抽成负数」的核心语义仍由下方的「≥ 0」与日志「抽走你 0 阳炁 1 阴炁」两条守住。
+    expect(n.yang).toBe(QI_REGEN_YANG);
+    expect(n.yin).toBe(QI_REGEN_YIN);
     expect(n.yang).toBeGreaterThanOrEqual(0);
     expect(n.yin).toBeGreaterThanOrEqual(0);
     // 「抽走你 0 阳炁 1 阴炁」—— 不得谎称抽走 2

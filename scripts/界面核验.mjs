@@ -112,6 +112,10 @@ async function runPhase(browser, label) {
   await page.goto(`${BASE}/`, { waitUntil: 'load' });
   await page.waitForSelector('.screen-frame', { timeout: 20000 });
   await page.locator('button', { hasText: /入/ }).first().click();
+  // 【T01】主界面「入局」现在先进**择道面板**：先给它留一张截图，再点底部确认键（文本同样含「入」）开战。
+  await page.waitForTimeout(450);
+  await page.screenshot({ path: path.join(OUT, `${label}-择道面板.png`) });
+  await page.locator('button', { hasText: /入/ }).first().click();
   await page.waitForTimeout(4600); // 开场动画时长
 
   const metrics = await page.evaluate(() => {

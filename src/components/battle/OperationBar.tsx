@@ -222,7 +222,9 @@ export function OperationBar({
           style={{
             position: 'relative',
             height: 82,
-            padding: '5px 8px',
+            // 【T05 遮挡修复】素材 `ui_战报框` 左框饰 14px（`SLICE.logFrame`），原内容只内缩 8px 会压边
+            // → 左侧改为 16px（见设计 §五 遮挡排查表）。高度 82 等战报魔法数字一律不动。
+            padding: '5px 8px 5px 16px',
             background: 'linear-gradient(180deg, rgba(38,28,17,0.9), rgba(26,19,11,0.92))',
             border: '1px solid rgba(212,168,67,0.55)',
             borderLeft: '3px solid var(--color-miaojin)',
