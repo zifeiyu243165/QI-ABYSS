@@ -16,10 +16,13 @@
  *   2) node scripts/界面核验.mjs            # 输出到 .核查截图/
  *   3) node scripts/界面核验.mjs --keep     # 只跑 A 相（不折腾素材，用于日常看效果）
  *
- * 依赖：playwright-core + 本机已安装的 Chromium（workbuddy 自带，无需写入 package.json）。
+ * 依赖：playwright-core + 本机已安装的 Chromium（不写入 package.json，
+ *       路径由 os.homedir() 与环境变量动态解析，可用 QI_PW_CORE /
+ *       PLAYWRIGHT_BROWSERS_PATH 覆盖）。
  * 产物落在 .核查截图/（已在 .gitignore 中忽略），可随时重跑覆盖。
  */
 import fs from 'node:fs';
+import os from 'node:os';
 import path from 'node:path';
 import { createRequire } from 'node:module';
 import { fileURLToPath } from 'node:url';
@@ -31,12 +34,22 @@ const OUT = path.join(ROOT, '.核查截图');
 const BASE = process.env.QI_ABYSS_BASE ?? 'http://localhost:4319';
 const KEEP_ONLY = process.argv.includes('--keep');
 
-/** 定位 playwright-core 与 Chromium：优先仓库依赖，其次 workbuddy 自带 */
+/**
+ * 浏览器依赖一律动态解析，不写死任何用户名或绝对路径。
+ * 可用环境变量覆盖：
+ *   QI_PW_CORE              playwright-core 的目录
+ *   PLAYWRIGHT_BROWSERS_PATH Chromium 缓存根目录
+ */
+const HOME = os.homedir();
+const LOCAL_APP_DATA = process.env.LOCALAPPDATA ?? path.join(HOME, 'AppData', 'Local');
+
+/** 定位 playwright-core 与 Chromium：优先仓库依赖，其次宿主运行环境 */
 function resolvePlaywright() {
   const candidates = [
+    process.env.QI_PW_CORE,
     path.join(ROOT, 'node_modules', 'playwright-core'),
-    'C:/Users/24316/.workbuddy/binaries/node/workspace/node_modules/playwright-core',
-  ];
+    path.join(HOME, '.workbuddy', 'binaries', 'node', 'workspace', 'node_modules', 'playwright-core'),
+  ].filter(Boolean);
   for (const c of candidates) {
     try {
       return { req: c, mod: require(c) };
@@ -44,14 +57,17 @@ function resolvePlaywright() {
       /* 继续找下一个 */
     }
   }
-  throw new Error('未找到 playwright-core，请先在本机安装或确认 workbuddy 运行环境路径');
+  throw new Error(
+    '未找到 playwright-core：请在本仓库安装，或用环境变量 QI_PW_CORE 指定目录',
+  );
 }
 
 function resolveChrome() {
   const roots = [
-    'C:/Users/24316/AppData/Local/ms-playwright',
-    'C:/Users/24316/.cache/ms-playwright',
-  ];
+    process.env.PLAYWRIGHT_BROWSERS_PATH,
+    path.join(LOCAL_APP_DATA, 'ms-playwright'),
+    path.join(HOME, '.cache', 'ms-playwright'),
+  ].filter(Boolean);
   for (const r of roots) {
     if (!fs.existsSync(r)) continue;
     for (const dir of fs.readdirSync(r)) {
